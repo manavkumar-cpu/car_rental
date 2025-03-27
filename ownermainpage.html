@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickRide - Owner Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+
+        h1 {
+            color: #094e5b;
+            font-size: 28px;
+        }
+
+        .owner-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .add-car-button {
+            background-color: #094e5b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+
+        .add-car-button:hover {
+            background-color: #062d37;
+        }
+
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background-color: #bb2d3b;
+        }
+
+        .car-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .car-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+
+        .car-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .car-item h3 {
+            color: #094e5b;
+            margin-bottom: 10px;
+        }
+
+        .car-item p {
+            margin: 8px 0;
+            color: #555;
+        }
+
+        .car-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .request-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .request-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .approve-btn {
+            background-color: #28a745;
+            color: white;
+        }
+        .reject-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+        .delete-btn, .toggle-availability {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity 0.3s;
+        }
+
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .toggle-availability {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .delete-btn:hover, .toggle-availability:hover {
+            opacity: 0.9;
+        }
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .nav-links a {
+            color: #094e5b;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        
+        .nav-links a:hover {
+            background-color: #e1e5eb;
+        }
+        
+        .nav-links a.active {
+            background-color: #094e5b;
+            color: white;
+        }
+
+        /* Popup Styles */
+        .popup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .popup-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            cursor: pointer;
+            color: #777;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .submit-btn {
+            background-color: #094e5b;
+            color: white;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .submit-btn:hover {
+            background-color: #062d37;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .car-list {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>QuickRide Owner Dashboard</h1>
+                <p id="ownerNameDisplay"></p>
+            </div>
+            <div class="nav-links">
+                <a href="ownermainpage.html">My Cars</a>
+                <a href="owner-requests.html">Booking Requests</a>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </header>
+
+        <button id="addCarBtn" class="add-car-button">+ Add Car</button>
+        
+        <div id="carList" class="car-list">
+            <!-- Cars will be loaded here dynamically -->
+        </div>
+    </div>
+
+    <!-- Popup Modal for Adding Cars -->
+    <div id="carFormPopup" class="popup">
+        <div class="popup-content">
+            <span class="close-btn">&times;</span>
+            <h2>Add a New Car</h2>
+            <form id="carForm">
+                <div class="input-group">
+                    <label for="carName">Car Name:</label>
+                    <input type="text" id="carName" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="carModel">Car Model:</label>
+                    <input type="text" id="carModel" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="carPrice">Price per Day (₹):</label>
+                    <input type="number" id="carPrice" min="1" step="1" required>
+                </div>
+
+                <div class="input-group">
+                    <label for="rentalStation">Select Rental City:</label>
+                    <select id="rentalStation" required>
+                        <option value="">Select a city</option>
+                        <option value="Ahmedabad">Ahmedabad</option>
+                        <option value="Surat">Surat</option>
+                        <option value="Vadodara">Vadodara</option>
+                        <option value="Rajkot">Rajkot</option>
+                        <option value="Gandhinagar">Gandhinagar</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="submit-btn">Add Car</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById("addCarBtn").addEventListener("click", function () {
+            document.getElementById("carFormPopup").style.display = "block";
+        });
+        
+        document.querySelector(".close-btn").addEventListener("click", function () {
+            document.getElementById("carFormPopup").style.display = "none";
+        });
+        
+        // Function to check if owner is logged in
+        function checkLogin() {
+            const ownerID = localStorage.getItem("ownerID"); // Changed from sessionStorage to localStorage
+            const ownerName = localStorage.getItem("owner_Name"); // Get owner's name
+        
+            console.log("Debug: Retrieved ownerID =", ownerID); // Debugging
+        
+            if (!ownerID) {
+                alert("Error: Owner not logged in! Please log in again.");
+                window.location.href = "ownerloginpage.html"; // Redirect to owner login page
+                return null;
+            }
+            
+            // Display owner's name if available
+            if (ownerName) {
+                document.getElementById("ownerNameDisplay").textContent = `Welcome, ${ownerName}`;
+            }
+            
+            return ownerID;
+        }
+        async function loadBookingRequests() {
+            const ownerID = checkLogin();
+            if (!ownerID) return;
+    
+            try {
+                const response = await fetch(`http://localhost:3000/owner-requests?ownerId=${ownerID}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch requests: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.message || "Failed to load requests");
+                }
+                
+                // Display requests in the owner-requests.html page
+                // You'll need to implement this display logic
+            } catch (error) {
+                console.error("Error loading requests:", error);
+                alert(error.message);
+            }
+        }
+        
+        async function loadCars() {
+            const ownerID = checkLogin();
+            if (!ownerID) return;
+        
+            try {
+                console.log("Fetching cars for ownerID:", ownerID);
+                const response = await fetch(`http://localhost:3000/cars?ownerID=${ownerID}`);
+        
+                console.log("Response status:", response.status);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+        
+                const data = await response.json();
+                console.log("Response data:", data);
+                
+                if (!data.success) {
+                    throw new Error(data.message || "Failed to fetch cars");
+                }
+        
+                const carList = document.getElementById("carList");
+                carList.innerHTML = "";
+        
+                if (data.cars.length === 0) {
+                    carList.innerHTML = "<p>No cars added yet. Click 'Add Car' to get started!</p>";
+                    return;
+                }
+        
+                data.cars.forEach((car) => {
+                    const carItem = document.createElement("div");
+                    carItem.classList.add("car-item");
+                    carItem.innerHTML = `
+                        <h3>${car.car_name} (${car.model})</h3>
+                        <p>Price per day: ₹${car.price_per_day}</p>
+                        <p>City: ${car.city}</p>
+                        <button class="delete-btn" data-id="${car.cars_id}">Delete</button>
+                    `;
+                    carList.appendChild(carItem);
+                });
+        
+                // Only keep delete button event listeners
+                document.querySelectorAll(".delete-btn").forEach(button => {
+                    button.addEventListener("click", deleteCar);
+                });
+        
+            } catch (error) {
+                console.error("Error loading cars:", error);
+                alert(`Error loading cars: ${error.message}`);
+            }
+        }
+        
+        
+        // Handle car form submission
+        document.getElementById("carForm").addEventListener("submit", async function (event) {
+            event.preventDefault();
+        
+            // Get and validate inputs
+            const carName = document.getElementById("carName").value.trim();
+            const carModel = document.getElementById("carModel").value.trim();
+            const carPrice = document.getElementById("carPrice").value;
+            const rentalCity = document.getElementById("rentalStation").value;
+            const ownerID = localStorage.getItem("ownerID");
+        
+            // Validate inputs
+            if (!carName || !carModel || !carPrice || !rentalCity) {
+                alert("Please fill all fields");
+                return;
+            }
+        
+            // Convert price to number
+            const price = parseFloat(carPrice);
+            if (isNaN(price) || price <= 0) {
+                alert("Please enter a valid price");
+                return;
+            }
+        
+            try {
+                const response = await fetch("http://localhost:3000/cars", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        car_name: carName,
+                        model: carModel,
+                        price_per_day: price,
+                        city: rentalCity,
+                        ownerID: ownerID
+                    })
+                });
+        
+                const data = await response.json();
+        
+                if (!response.ok) {
+                    throw new Error(data.message || "Failed to add car");
+                }
+        
+                alert("Car added successfully!");
+                document.getElementById("carForm").reset();
+                document.getElementById("carFormPopup").style.display = "none";
+                loadCars(); // Refresh the list
+            } catch (error) {
+                console.error("Error:", error);
+                alert(error.message || "Error adding car");
+            }
+        });
+        async function handleRequestAction(userId, carId, startDate, action) {
+            const ownerID = localStorage.getItem('ownerID');
+            if (!ownerID) return;
+    
+            try {
+                const response = await fetch(
+                    `/trip-confirmations/${userId}/${carId}/${encodeURIComponent(startDate)}`, 
+                    {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            status: action,
+                            ownerId: ownerID
+                        })
+                    }
+                );
+    
+                if (!response.ok) {
+                    throw new Error(`Action failed: ${response.status}`);
+                }
+    
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`Request ${action.toLowerCase()} successfully`);
+                    loadBookingRequests(); // Refresh the list
+                } else {
+                    throw new Error(result.message || "Action failed");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert(error.message);
+            }
+        }
+        // Delete car function
+        async function deleteCar(event) {
+            const carID = event.target.getAttribute("data-id");
+            const ownerID = checkLogin();
+            if (!ownerID || !confirm("Are you sure you want to delete this car?")) return;
+        
+            try {
+                const response = await fetch(`http://localhost:3000/cars/${carID}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ownerID })
+                });
+        
+                const data = await response.json();
+        
+                if (!response.ok) {
+                    throw new Error(data.message || "Failed to delete car");
+                }
+        
+                alert(data.message || "Car deleted successfully");
+                loadCars(); // Refresh the car list
+            } catch (error) {
+                console.error("Error deleting car:", error);
+                alert(error.message || "Error deleting car. Please try again.");
+            }
+        }
+        
+        // Load cars on page load and check login
+        document.addEventListener("DOMContentLoaded", function() {
+            if (!checkLogin()) {
+                return;
+            }
+            loadCars();
+        });
+        
+        // Logout functionality
+        document.getElementById("logoutBtn").addEventListener("click", function() {
+            localStorage.removeItem("ownerID");
+            localStorage.removeItem("owner_Name");
+            window.location.href = "ownerloginpage.html";
+        });
+    </script>
+</body>
+</html>

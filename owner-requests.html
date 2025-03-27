@@ -1,0 +1,480 @@
+<!-- <style>
+
+</style> -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Requests - QuickRide Owner</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+    
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+        }
+    
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+    
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+    
+        h1 {
+            color: #094e5b;
+            font-size: 28px;
+        }
+    
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+    
+        .nav-links a {
+            color: #094e5b;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+    
+        .nav-links a:hover {
+            background-color: #e1e5eb;
+        }
+    
+        .nav-links a.active {
+            background-color: #094e5b;
+            color: white;
+        }
+    
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+    
+        .logout-btn:hover {
+            background-color: #bb2d3b;
+        }
+    
+        .requests-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+    
+        .request-item {
+            border: 1px solid #e1e5eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+    
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+    
+        .request-car {
+            font-weight: bold;
+            color: #094e5b;
+            font-size: 18px;
+        }
+    
+        .request-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+    
+        .status-confirmed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+    
+        .status-rejected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    
+        .request-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+    
+        .detail-group p:first-child {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+    
+        .request-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+    
+        .confirm-btn, .reject-btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.3s;
+        }
+    
+        .confirm-btn {
+            background-color: #28a745;
+            color: white;
+        }
+    
+        .reject-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+    
+        .confirm-btn:hover, .reject-btn:hover {
+            opacity: 0.9;
+        }
+    
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+    
+        .loading i {
+            margin-right: 10px;
+        }
+    
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .request-details {
+                grid-template-columns: 1fr;
+            }
+            
+            .request-actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Booking Requests</h1>
+                <p id="ownerNameDisplay"></p>
+            </div>
+            <div class="nav-links">
+                <a href="ownermainpage.html">My Cars</a>
+                <a href="owner-requests.html" class="active">Booking Requests</a>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </header>
+
+        <div class="requests-container">
+            <div id="requestsList">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading booking requests...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Check if owner is logged in
+        function checkLogin() {
+            const ownerID = localStorage.getItem("ownerID");
+            const ownerName = localStorage.getItem("owner_Name");
+            
+            if (!ownerID) {
+                alert("Please login first");
+                window.location.href = "ownerloginpage.html";
+                return null;
+            }
+            
+            if (ownerName) {
+                document.getElementById("ownerNameDisplay").textContent = `Welcome, ${ownerName}`;
+            }
+            
+            return ownerID;
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        }
+
+        // Calculate total price
+        function calculateTotal(startDate, endDate, pricePerDay) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) || 1;
+            return days * pricePerDay;
+        }
+
+        // Load booking requests
+        async function loadRequests() {
+            const ownerID = checkLogin();
+            if (!ownerID) return;
+            
+            try {
+                document.getElementById("requestsList").innerHTML = `
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Loading booking requests...
+                    </div>
+                `;
+
+                const response = await fetch(`http://localhost:3000/owner-requests?ownerId=${ownerID}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to load requests: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.message || "Failed to fetch requests");
+                }
+                
+                const requestsList = document.getElementById("requestsList");
+                
+                if (result.requests.length === 0) {
+                    requestsList.innerHTML = '<div class="empty-state">No booking requests found</div>';
+                    return;
+                }
+                
+                requestsList.innerHTML = result.requests.map(request => {
+                    const totalPrice = calculateTotal(request.start_date, request.end_date, request.price_per_day);
+                    const days = Math.ceil((new Date(request.end_date) - new Date(request.start_date)) / (1000 * 60 * 60 * 24)) || 1;
+                    
+                    return `
+                        <div class="request-item">
+                            <div class="request-header">
+                                <div class="request-car">${request.car_name} ${request.model}</div>
+                                <div class="request-status status-${request.status.toLowerCase()}">
+                                    ${request.status}
+                                </div>
+                            </div>
+                            
+                            <div class="request-details">
+                                <div class="detail-group">
+                                    <p>Requested By</p>
+                                    <p>${request.user_name}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>User Contact</p>
+                                    <p>${request.user_phone || 'N/A'}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>From Date</p>
+                                    <p>${formatDate(request.start_date)}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>To Date</p>
+                                    <p>${formatDate(request.end_date)}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>Total Days</p>
+                                    <p>${days}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>Total Price</p>
+                                    <p>₹${totalPrice}</p>
+                                </div>
+                            </div>
+                            
+                            ${request.status === 'Pending' ? `
+                            <div class="request-actions">
+                                <button class="confirm-btn" 
+                                        onclick="updateRequestStatus(${request.userID}, ${request.car_id}, '${new Date(request.start_date).toISOString()}', 'Confirmed')">
+                                    Confirm
+                                </button>
+                                <button class="reject-btn" 
+                                        onclick="updateRequestStatus(${request.userID}, ${request.car_id}, '${new Date(request.start_date).toISOString()}', 'Rejected')">
+                                    Reject
+                                </button>
+                            </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }).join('');
+                
+            } catch (error) {
+                console.error("Error loading requests:", error);
+                document.getElementById("requestsList").innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Error loading requests: ${error.message}
+                        <button onclick="loadRequests()" style="margin-top: 10px; padding: 5px 10px;">
+                            <i class="fas fa-sync-alt"></i> Try Again
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        async function updateRequestStatus(userId, carId, startDate, status) {
+            console.group('🟢 Frontend Debug - updateRequestStatus');
+            try {
+                // Input Validation
+                console.log('1️⃣ Input Parameters:', {
+                    userId, 
+                    carId, 
+                    startDate,
+                    status
+                });
+        
+                const ownerId = localStorage.getItem("ownerID");
+                console.log('🔐 Owner ID from storage:', ownerId);
+        
+                // Date Processing
+                console.log('2️⃣ Original Date String:', startDate);
+                
+                const dateObj = new Date(startDate);
+                console.log('📅 Date Object:', dateObj);
+                console.log('🕒 Local Time String:', dateObj.toString());
+                console.log('🌐 ISO String:', dateObj.toISOString());
+                
+                const encodedDate = encodeURIComponent(dateObj.toISOString());
+                console.log('🔗 Encoded for URL:', encodedDate);
+                console.log('⬆️ Sending request to:', `http://localhost:3000/trip-confirmations/${userId}/${carId}/${encodedDate}`);
+
+                // UI Feedback
+                const btn = event.target;
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                console.log('🔄 UI Loading State Activated');
+        
+                // API Request
+                console.log('3️⃣ Making API Request...');
+                const apiUrl = `http://localhost:3000/trip-confirmations/${userId}/${carId}/${encodedDate}`;
+                console.log('🔗 Request URL:', apiUrl);
+                
+                const response = await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-Debug': 'frontend-request' 
+                    },
+                    body: JSON.stringify({ 
+                        status: status,
+                        ownerId: ownerId 
+                    })
+                });
+        
+                console.log('4️⃣ Response Received:', {
+                    status: response.status,
+                    ok: response.ok
+                });
+        
+                // Response Handling
+                const data = await response.json();
+                console.log('📦 Response Data:', data);
+        
+                if (!response.ok) {
+                    throw new Error(data.message || `HTTP error ${response.status}`);
+                }
+        
+                if (data.success) {
+                    console.log('🎉 Success:', data);
+                    alert(`Booking ${status.toLowerCase()} successfully`);
+                    loadRequests();
+                } else {
+                    throw new Error(data.message || "Action failed");
+                }
+        
+            } catch (error) {
+                console.error('❌ Frontend Error:', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack
+                });
+                
+                alert(`Error: ${error.message}`);
+                
+                if (error.message.includes("Unauthorized")) {
+                    localStorage.removeItem('ownerID');
+                    window.location.href = 'ownerlogin.html';
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = status === 'Confirmed' ? 'Confirm' : 'Reject';
+                console.groupEnd();
+            }
+        }
+        // Logout function
+        function logout() {
+            localStorage.removeItem("ownerID");
+            localStorage.removeItem("owner_Name");
+            window.location.href = "ownerloginpage.html";
+        }
+
+        // Initialize page
+        document.addEventListener("DOMContentLoaded", () => {
+            if (checkLogin()) {
+                loadRequests();
+            }
+            
+            document.getElementById("logoutBtn").addEventListener("click", logout);
+        });
+    </script>
+</body>
+</html>
+
+
+// In updateRequestStatus() in owner-requests.html
+await fetch(`http://localhost:3000/trip-confirmations/${userId}/${carId}/${encodedDate}`, {
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ 
+    status: status,  // "Confirmed" or "Rejected"
+    ownerId: localStorage.getItem("ownerID") // Include ownerId
+  })
+});

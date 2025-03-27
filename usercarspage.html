@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Available Cars - QuickRide</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.1rem;
+            color: #094e5b;
+        }
+        
+        .loading i {
+            margin-right: 0.5rem;
+        }
+        
+        .error-message {
+            text-align: center;
+            padding: 2rem;
+            color: #dc3545;
+            background: #f8d7da;
+            border-radius: 5px;
+        }
+        
+        .retry-btn {
+            background-color: #094e5b;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            margin-top: 1rem;
+            cursor: pointer;
+        }
+        
+        .retry-btn:hover {
+            background-color: #062d37;
+        }
+        
+        .retry-btn i {
+            margin-right: 0.5rem;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        
+        .navbar {
+            background-color: #094e5b;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+        }
+        
+        .search-summary {
+            background-color: #094e5b;
+            color: white;
+            padding: 1rem 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .cars-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+        
+        .car-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        
+        .car-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .car-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .car-image {
+            height: 200px;
+            background-color: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            color: #666;
+        }
+        
+        .car-details {
+            padding: 1.5rem;
+        }
+        
+        .car-details h3 {
+            color: #094e5b;
+            margin-bottom: 0.5rem;
+        }
+        
+        .car-price {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 0.5rem 0;
+            color: #28a745;
+        }
+        
+        .car-features {
+            display: flex;
+            gap: 1rem;
+            margin: 1rem 0;
+            color: #666;
+        }
+        
+        .book-btn {
+            background-color: #094e5b;
+            color: white;
+            border: none;
+            padding: 0.8rem;
+            width: 100%;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        
+        .book-btn:hover {
+            background-color: #062d37;
+        }
+        
+        .footer {
+            background-color: #094e5b;
+            color: white;
+            text-align: center;
+            padding: 1.5rem;
+            margin-top: 3rem;
+        }
+        
+        @media (max-width: 768px) {
+            .nav-links {
+                gap: 1rem;
+            }
+            
+            .car-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <h1>QuickRide</h1>
+        <div class="nav-links">
+            <a href="usermainpage.html">Home</a>
+            <a href="#">Bookings</a>
+            <a href="#">Contact</a>
+        </div>
+        <i class="fas fa-user-circle user-icon"></i>
+    </nav>
+    
+    <!-- Search Summary - Removed the search criteria line -->
+    <div class="search-summary">
+        <h2>Available Cars</h2>
+    </div>
+    
+    
+   <!-- Cars Listing -->
+   <div class="cars-container">
+    <div class="car-grid" id="carGrid">
+        <div class="loading">Loading available cars...</div>
+    </div>
+</div>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <p>QuickRide &copy; 2025. All rights reserved.</p>
+    </footer>
+    <script>
+        function toISTString(date) {
+            const d = new Date(date);
+            return new Date(d.getTime() + (5.5 * 60 * 60 * 1000))
+                .toISOString()
+                .slice(0, 19)
+                .replace('T', ' ');
+        }
+        document.addEventListener("DOMContentLoaded", async () => {
+            // Parse URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const location = urlParams.get('location');
+            let fromDate = urlParams.get('from');
+            let toDate = urlParams.get('to');
+            
+            // Convert dates to IST format for API call
+            fromDate = toISTString(fromDate);
+            toDate = toISTString(toDate);
+            
+            // Show loading state
+            document.getElementById('carGrid').innerHTML = `
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading available cars...
+                </div>
+            `;
+        
+            try {
+
+                
+                // Fetch available cars with timeout
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                
+                const response = await fetch(
+                    `http://localhost:3000/cars/available?location=${encodeURIComponent(location)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`
+                );
+                clearTimeout(timeout);
+        
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.message || "Request was not successful");
+                }
+                
+                if (!result.cars || !Array.isArray(result.cars)) {
+                    throw new Error("Invalid data format received");
+                }
+                
+                // Display cars
+                displayCars(result.cars, fromDate, toDate);
+            } catch (error) {
+                console.error("Error:", error);
+                let errorMessage = error.message;
+                
+                if (error.name === 'AbortError') {
+                    errorMessage = "Request timed out. Please try again.";
+                }
+                
+                document.getElementById('carGrid').innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        ${errorMessage}
+                        <button onclick="window.location.reload()" class="retry-btn">
+                            <i class="fas fa-sync-alt"></i> Retry
+                        </button>
+                    </div>
+                `;
+            }
+        });
+        
+        
+
+        function displayCars(cars, fromDate, toDate) {
+            const carGrid = document.getElementById('carGrid');
+            
+            if (!cars || cars.length === 0) {
+                carGrid.innerHTML = `
+                    <div class="no-cars">
+                        <i class="fas fa-info-circle"></i>
+                        No cars available in this location for selected dates.
+                        <a href="usermainpage.html" class="search-again">Search again</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            carGrid.innerHTML = cars.map(car => `
+                <div class="car-card">
+                    <div class="car-image">
+                        <i class="fas fa-car"></i>
+                    </div>
+                    <div class="car-details">
+                        <h3>${car.car_name} ${car.model}</h3>
+                        <div class="car-price">₹${car.price_per_day}/day</div>
+                        <div class="car-features">
+                            <span><i class="fas fa-map-marker-alt"></i> ${car.city}</span>
+                            <span><i class="fas fa-user"></i> ${car.owner_name}</span>
+                        </div>
+                        <button class="book-btn" onclick="bookCar('${car.cars_id}', '${fromDate}', '${toDate}')">
+                            <i class="fas fa-calendar-check"></i> Book Now
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function bookCar(carId, fromDate, toDate) {
+            // Convert dates back to local format for display
+            const localFrom = new Date(fromDate).toISOString();
+            const localTo = new Date(toDate).toISOString();
+            
+            window.location.href = `booking.html?carId=${carId}&from=${encodeURIComponent(localFrom)}&to=${encodeURIComponent(localTo)}`;
+        }
+    </script>
+</body>
+</html>

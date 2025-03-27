@@ -1,0 +1,132 @@
+/* General Styles */
+body {
+    background-color: #121212;
+    color: #ffffff;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* Navbar */
+.navbar {
+    display: flex; 
+    justify-content: space-between;
+    align-items: center;
+    background-color: #1e1e1e;
+    padding: 15px 30px;
+}
+
+.navbar h1 {
+    color: #ffffff;
+    font-size: 24px;
+}
+
+.nav-links a {
+    color: #cccccc;
+    text-decoration: none;
+    margin: 0 15px;
+    transition: color 0.3s ease;
+}
+
+.nav-links a:hover {
+    color: #ffffff;
+}
+
+.user-icon {
+    font-size: 24px;
+    color: #cccccc;
+}
+
+/* Hero Section */
+.hero {
+    text-align: center;
+    padding: 50px 20px;
+    background: linear-gradient(to right, #1c1c1c, #292929);
+}
+
+.hero h2 {
+    font-size: 36px;
+    margin-bottom: 10px;
+}
+
+.hero p {
+    font-size: 18px;
+    color: #aaaaaa;
+}
+
+/* Search & Booking Widget */
+.search-widget {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 30px 0;
+}
+
+.search-widget input, .search-widget button {
+    padding: 10px;
+    border-radius: 5px;
+    border: none;
+}
+
+.search-widget input {
+    width: 200px;
+    background-color: #2a2a2a;
+    color: #ffffff;
+}
+
+.search-widget button {
+    background-color: #ff6b00;
+    color: #ffffff;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.search-widget button:hover {
+    background-color: #ff8000;
+}
+
+/* Featured Cars */
+.featured-cars {
+    text-align: center;
+    padding: 40px;
+}
+
+.featured-cars h3 {
+    font-size: 28px;
+    margin-bottom: 20px;
+}
+
+.car-grid {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.car-card {
+    background-color: #1e1e1e;
+    padding: 20px;
+    border-radius: 10px;
+    width: 200px;
+    text-align: center;
+    transition: transform 0.3s ease;
+}
+
+.car-card:hover {
+    transform: scale(1.05);
+}
+
+.car-icon {
+    font-size: 40px;
+    color: #ff6b00;
+    margin-bottom: 10px;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 15px;
+    background-color: #1e1e1e;
+    color: #cccccc;
+    margin-top: 30px;
+}
