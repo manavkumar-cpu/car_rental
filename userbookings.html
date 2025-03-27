@@ -161,25 +161,39 @@ h2 {
         try {
             // Get URL parameters and user ID
             const urlParams = new URLSearchParams(window.location.search);
-            const status = urlParams.get('booking_status'); // pending/confirmed/rejected
+            const urlStatus = urlParams.get('booking_status'); // pending/confirmed/rejected
             const urlCarId = urlParams.get('car_id');
             const userId = localStorage.getItem('userID');
-
+    
             if (!userId) {
-                window.location.href = "login.html";
+                window.location.href = "userloginpage.html";
                 return;
             }
-
+    
             // Fetch booking details
             const bookings = await fetchUserBookings(userId);
             
-            // Display status message if URL has status parameter
-             displayStatusMessage(status); 
+            // Find the relevant booking
+            let relevantBooking;
+            if (urlCarId) {
+                relevantBooking = bookings.find(b => b?.car_id == urlCarId);
+            }
+            if (!relevantBooking && bookings.length > 0) {
+                relevantBooking = bookings[0];
+            }
+    
+            // Display status message - use booking status if available, otherwise URL parameter
+            displayStatusMessage(urlStatus, relevantBooking?.status);
             
-            // Display booking details - pass both bookings and urlCarId
+            // Display booking details
             displayBookingDetails(bookings, urlCarId);
 
+                    // Start auto-refresh if status is pending
+        if (relevantBooking?.status.toLowerCase() === 'pending') {
+            startAutoRefresh(urlCarId);
+        }
 
+    
         } catch (error) {
             console.error("Page load error:", error);
             showError(error.message || "Failed to load booking details");
@@ -215,43 +229,48 @@ h2 {
     }
 
     // Display status message based on URL parameter
-    function displayStatusMessage(status) {
-        try {
-            const statusMessage = document.getElementById('status-message');
-            
-            if (!status || !statusMessage) return;
-            
-            const statusConfig = {
-                pending: {
-                    class: 'alert-info',
-                    icon: 'fa-clock',
-                    text: 'Your booking request is pending owner approval.'
-                },
-                confirmed: {
-                    class: 'alert-success',
-                    icon: 'fa-check-circle',
-                    text: 'Owner has confirmed your booking!'
-                },
-                rejected: {
-                    class: 'alert-danger',
-                    icon: 'fa-times-circle',
-                    text: 'Owner declined your booking request.'
-                }
-            };
-
-            if (statusConfig[status]) {
-                const config = statusConfig[status];
-                statusMessage.innerHTML = `
-                    <div class="alert ${config.class}">
-                        <i class="fas ${config.icon}"></i> ${config.text}
-                    </div>
-                `;
-                statusMessage.style.display = 'block';
+    // Updated displayStatusMessage function
+function displayStatusMessage(status, bookingStatus = null) {
+    try {
+        const statusMessage = document.getElementById('status-message');
+        
+        if (!statusMessage) return;
+        
+        // Use bookingStatus from data if available, otherwise use URL parameter
+        const actualStatus = bookingStatus || status;
+        if (!actualStatus) return;
+        
+        const statusConfig = {
+            pending: {
+                class: 'alert-info',
+                icon: 'fa-clock',
+                text: 'Your booking request is pending owner approval.'
+            },
+            confirmed: {
+                class: 'alert-success',
+                icon: 'fa-check-circle',
+                text: 'Owner has confirmed your booking!'
+            },
+            rejected: {
+                class: 'alert-danger',
+                icon: 'fa-times-circle',
+                text: 'Owner declined your booking request.'
             }
-        } catch (error) {
-            console.error("Error displaying status message:", error);
+        };
+
+        if (statusConfig[actualStatus.toLowerCase()]) {
+            const config = statusConfig[actualStatus.toLowerCase()];
+            statusMessage.innerHTML = `
+                <div class="alert ${config.class}">
+                    <i class="fas ${config.icon}"></i> ${config.text}
+                </div>
+            `;
+            statusMessage.style.display = 'block';
         }
+    } catch (error) {
+        console.error("Error displaying status message:", error);
     }
+}
 
     // Display booking details with improved error handling
     function displayBookingDetails(bookings, urlCarId = null) {
