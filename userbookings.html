@@ -151,6 +151,7 @@ h2 {
 <body>
     <div id="booking-status-container">
         <h2>Booking Status</h2>
+        <div id="refresh-message" style="display: none;"></div>
         <div id="status-message"></div>
         <div id="booking-details"></div>
         <div id="error-message"></div>
@@ -199,7 +200,98 @@ h2 {
             showError(error.message || "Failed to load booking details");
         }
     });
+    // Helper function to find relevant booking
+function findRelevantBooking(bookings, urlCarId) {
+    if (!bookings || !Array.isArray(bookings)) return null;
+    
+    if (urlCarId) {
+        return bookings.find(b => b?.car_id == urlCarId) || bookings[0];
+    }
+    return bookings[0];
+}
 
+// Auto-refresh logic
+function startAutoRefresh(carId) {
+    const refreshInterval = 10000; // 10 seconds
+    let refreshCount = 0;
+    const maxRefreshes = 30; // Stop after 5 minutes (30 * 10 seconds)
+
+    const refreshTimer = setInterval(async () => {
+        try {
+            refreshCount++;
+            console.log(`Checking booking status (attempt ${refreshCount})`);
+            
+            const userId = localStorage.getItem('userID');
+            const bookings = await fetchUserBookings(userId);
+            const booking = findRelevantBooking(bookings, carId);
+            
+            if (!booking) {
+                console.warn("Booking not found - stopping refresh");
+                clearInterval(refreshTimer);
+                return;
+            }
+            
+            const currentStatus = booking.status.toLowerCase();
+            
+            if (currentStatus !== 'pending') {
+                // Status changed - refresh the page to show new status
+                console.log(`Status changed to ${currentStatus} - reloading`);
+                clearInterval(refreshTimer);
+                window.location.href = `userbookings.html?booking_status=${currentStatus}&car_id=${carId}`;
+                return;
+            }
+            
+            if (refreshCount >= maxRefreshes) {
+                console.log("Max refresh attempts reached - stopping");
+                clearInterval(refreshTimer);
+                showMessage("Owner is taking longer than expected to respond. We'll notify you when they reply.", "info");
+                return;
+            }
+            
+            // Optional: Update the UI without full page refresh
+            updateStatusUI(booking.status);
+            
+        } catch (error) {
+            console.error("Auto-refresh error:", error);
+            clearInterval(refreshTimer);
+        }
+    }, refreshInterval);
+
+    // Show loading indicator
+    showMessage("Checking booking status...", "info");
+}
+
+// Update UI without full refresh (optional)
+function updateStatusUI(status) {
+    const statusElement = document.getElementById('current-status');
+    if (statusElement) {
+        statusElement.textContent = status;
+        statusElement.className = `status-badge ${status.toLowerCase()}`;
+    }
+}
+
+// Helper function to show messages
+function showMessage(message, type) {
+    const messageDiv = document.getElementById('refresh-message');
+    if (!messageDiv) return;
+    
+    messageDiv.innerHTML = `
+        <div class="alert alert-${type}">
+            <i class="fas ${getStatusIcon(type)}"></i> ${message}
+        </div>
+    `;
+    messageDiv.style.display = 'block';
+}
+
+function getStatusIcon(type) {
+    const icons = {
+        'info': 'fa-info-circle',
+        'success': 'fa-check-circle',
+        'warning': 'fa-exclamation-circle',
+        'danger': 'fa-times-circle'
+    };
+    return icons[type] || 'fa-info-circle';
+}
     // Fetch user bookings from backend
     async function fetchUserBookings(userId) {
         try {
