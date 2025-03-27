@@ -467,14 +467,3 @@
     </script>
 </body>
 </html>
-
-
-// In updateRequestStatus() in owner-requests.html
-await fetch(`http://localhost:3000/trip-confirmations/${userId}/${carId}/${encodedDate}`, {
-  method: 'PUT',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ 
-    status: status,  // "Confirmed" or "Rejected"
-    ownerId: localStorage.getItem("ownerID") // Include ownerId
-  })
-});

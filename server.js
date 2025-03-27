@@ -1,5 +1,5 @@
 process.env.TZ = 'Asia/Kolkata'; // Top of file
-const mysql = require("mysql2");
+const mysql = require("mysql2/promise");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
@@ -11,22 +11,38 @@ const PORT = 3000;
 app.use(express.json());
 app.use(cors());
 
-// MySQL Connection
-const db = mysql.createConnection({
+// MySQL Connection Pool
+const pool = mysql.createPool({
   host: "localhost",
   user: "root",
   password: "Aa1manav",
-  database: "dbms_project"
+  database: "dbms_project",
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
 });
 
-db.connect((err) => {
-  if (err) {
+// Test connection
+pool.getConnection()
+  .then(connection => {
+    console.log("✅ Connected to MySQL database");
+    connection.release();
+  })
+  .catch(err => {
     console.error("❌ MySQL Connection Failed:", err);
-    return;
-  }
-  console.log("✅ Connected to MySQL database");
-});
+  });
 
+app.get('/test', async (req, res) => {
+  try {
+    const [results] = await pool.query('SELECT NOW() AS current_time');
+    res.json({ 
+      message: "Server is working!",
+      time: results[0].current_time 
+    });
+  } catch (err) {
+    res.status(500).send('Database error');
+  }
+});
 
 // ====================== AUTHENTICATION ENDPOINTS ======================
 
@@ -41,17 +57,11 @@ const handleLogin = async (req, res, tableName, idField, nameField) => {
     });
   }
 
-  const sql = `SELECT * FROM ${tableName} WHERE email = ?`;
-  
-  db.query(sql, [email], async (err, results) => {
-    if (err) {
-      console.error("⚠️ Database Error:", err);
-      return res.status(500).json({ 
-        success: false,
-        message: "Database error",
-        error: err.message 
-      });
-    }
+  try {
+    const [results] = await pool.query(
+      `SELECT * FROM ${tableName} WHERE email = ?`,
+      [email]
+    );
 
     if (results.length === 0) {
       return res.status(401).json({ 
@@ -61,35 +71,32 @@ const handleLogin = async (req, res, tableName, idField, nameField) => {
     }
 
     const user = results[0];
+    const isMatch = await bcrypt.compare(password, user.password);
     
-    try {
-      const isMatch = await bcrypt.compare(password, user.password);
-      
-      if (isMatch) {
-        res.status(200).json({
-          success: true,
-          message: "Login successful",
-          user: {
-            id: user[idField],
-            name: user[nameField],
-            email: user.email
-          }
-        });
-      } else {
-        res.status(401).json({ 
-          success: false,
-          message: "Invalid email or password" 
-        });
-      }
-    } catch (error) {
-      console.error("⚠️ Bcrypt Error:", error);
-      res.status(500).json({ 
+    if (isMatch) {
+      res.status(200).json({
+        success: true,
+        message: "Login successful",
+        user: {
+          id: user[idField],
+          name: user[nameField],
+          email: user.email
+        }
+      });
+    } else {
+      res.status(401).json({ 
         success: false,
-        message: "Authentication error",
-        error: error.message 
+        message: "Invalid email or password" 
       });
     }
-  });
+  } catch (error) {
+    console.error("⚠️ Database Error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Authentication error",
+      error: error.message 
+    });
+  }
 };
 
 // Signup Endpoint
@@ -117,44 +124,29 @@ app.post("/signup", async (req, res) => {
 
   try {
     // Check if email already exists
-    const checkSql = `SELECT * FROM ${tableName} WHERE email = ?`;
-    db.query(checkSql, [email], async (err, results) => {
-      if (err) {
-        console.error("⚠️ Database Error:", err);
-        return res.status(500).json({ 
-          success: false,
-          message: "Database error",
-          error: err.message 
-        });
-      }
+    const [results] = await pool.query(
+      `SELECT * FROM ${tableName} WHERE email = ?`,
+      [email]
+    );
 
-      if (results.length > 0) {
-        return res.status(400).json({ 
-          success: false,
-          message: "Email already exists" 
-        });
-      }
-
-      // Hash password and create user
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-      const insertSql = `INSERT INTO ${tableName} (${nameField}, email, phone, password) VALUES (?, ?, ?, ?)`;
-      
-      db.query(insertSql, [name, email, phone, hashedPassword], (err, result) => {
-        if (err) {
-          console.error("⚠️ Database Error:", err);
-          return res.status(500).json({ 
-            success: false,
-            message: "Database error",
-            error: err.message 
-          });
-        }
-
-        res.status(201).json({
-          success: true,
-          message: "Signup successful",
-          id: result.insertId
-        });
+    if (results.length > 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Email already exists" 
       });
+    }
+
+    // Hash password and create user
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const [result] = await pool.query(
+      `INSERT INTO ${tableName} (${nameField}, email, phone, password) VALUES (?, ?, ?, ?)`,
+      [name, email, phone, hashedPassword]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Signup successful",
+      id: result.insertId
     });
   } catch (error) {
     console.error("⚠️ Server Error:", error);
@@ -190,7 +182,7 @@ app.get("/cars/available", async (req, res) => {
   }
 
   try {
-    const [cars] = await db.promise().query(
+    const [cars] = await pool.query(
       `SELECT c.*, o.owner_name 
        FROM cars c
        JOIN owners o ON c.ownerID = o.ownerID
@@ -203,7 +195,6 @@ app.get("/cars/available", async (req, res) => {
       cars,
       count: cars.length
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({ 
@@ -217,7 +208,7 @@ app.get("/cars/available", async (req, res) => {
 // Get car details by ID
 app.get("/cars/:carId", async (req, res) => {
   try {
-    const [car] = await db.promise().query(
+    const [car] = await pool.query(
       `SELECT c.*, o.owner_name, o.email as owner_email, o.phone as owner_phone
        FROM cars c
        JOIN owners o ON c.ownerID = o.ownerID
@@ -236,7 +227,6 @@ app.get("/cars/:carId", async (req, res) => {
       success: true,
       car: car[0]
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({
@@ -248,25 +238,23 @@ app.get("/cars/:carId", async (req, res) => {
 });
 
 // Get cities for search dropdown
-app.get("/get-cities", (req, res) => {
-  const sql = "SELECT DISTINCT city FROM cars";
-  
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error("⚠️ Database Error:", err);
-      return res.status(500).json({ 
-        success: false,
-        message: "Database error",
-        error: err.message 
-      });
-    }
-
+app.get("/get-cities", async (req, res) => {
+  try {
+    const [results] = await pool.query("SELECT DISTINCT city FROM cars");
     const cities = results.map(row => row.city);
+    
     res.status(200).json({ 
       success: true,
       cities 
     });
-  });
+  } catch (err) {
+    console.error("⚠️ Database Error:", err);
+    res.status(500).json({ 
+      success: false,
+      message: "Database error",
+      error: err.message 
+    });
+  }
 });
 
 // Add new car (for owners)
@@ -283,7 +271,7 @@ app.post("/cars", async (req, res) => {
 
   try {
     // Verify owner exists
-    const [owner] = await db.promise().query(
+    const [owner] = await pool.query(
       "SELECT ownerID FROM owners WHERE ownerID = ?", 
       [ownerID]
     );
@@ -296,7 +284,7 @@ app.post("/cars", async (req, res) => {
     }
 
     // Insert new car
-    const [result] = await db.promise().query(
+    const [result] = await pool.query(
       `INSERT INTO cars 
        (car_name, model, price_per_day, city, ownerID) 
        VALUES (?, ?, ?, ?, ?)`,
@@ -308,7 +296,6 @@ app.post("/cars", async (req, res) => {
       message: "Car added successfully",
       car_id: result.insertId
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({
@@ -331,7 +318,7 @@ app.get("/cars", async (req, res) => {
   }
 
   try {
-    const [cars] = await db.promise().query(
+    const [cars] = await pool.query(
       `SELECT cars_id, car_name, model, price_per_day, city 
        FROM cars WHERE ownerID = ?`,
       [ownerID]
@@ -342,7 +329,6 @@ app.get("/cars", async (req, res) => {
       cars,
       count: cars.length
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({
@@ -367,7 +353,7 @@ app.delete("/cars/:cars_id", async (req, res) => {
 
   try {
     // Verify ownership
-    const [car] = await db.promise().query(
+    const [car] = await pool.query(
       "SELECT ownerID FROM cars WHERE cars_id = ?",
       [cars_id]
     );
@@ -387,7 +373,7 @@ app.delete("/cars/:cars_id", async (req, res) => {
     }
 
     // Delete the car
-    await db.promise().query(
+    await pool.query(
       "DELETE FROM cars WHERE cars_id = ?",
       [cars_id]
     );
@@ -396,7 +382,6 @@ app.delete("/cars/:cars_id", async (req, res) => {
       success: true,
       message: "Car deleted successfully"
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({
@@ -423,7 +408,7 @@ app.post('/trip-confirmations', async (req, res) => {
 
   try {
     // Check if car exists
-    const [car] = await db.promise().query(
+    const [car] = await pool.query(
       "SELECT * FROM cars WHERE cars_id = ?",
       [carId]
     );
@@ -436,7 +421,7 @@ app.post('/trip-confirmations', async (req, res) => {
     }
 
     // Check if user exists
-    const [user] = await db.promise().query(
+    const [user] = await pool.query(
       "SELECT userID FROM users WHERE userID = ?",
       [userId]
     );
@@ -449,7 +434,7 @@ app.post('/trip-confirmations', async (req, res) => {
     }
 
     // Check for date conflicts
-    const [conflicts] = await db.promise().query(
+    const [conflicts] = await pool.query(
       `SELECT * FROM trip_confirmations 
        WHERE car_id = ? AND status = 'Confirmed'
        AND ((start_date <= ? AND end_date >= ?) 
@@ -465,7 +450,7 @@ app.post('/trip-confirmations', async (req, res) => {
     }
 
     // Create trip confirmation request
-    const [result] = await db.promise().query(
+    const [result] = await pool.query(
       `INSERT INTO trip_confirmations 
        (userID, car_id, start_date, end_date, status) 
        VALUES (?, ?, ?, ?, 'Pending')`,
@@ -477,7 +462,6 @@ app.post('/trip-confirmations', async (req, res) => {
       message: "Booking request sent to owner",
       confirmationId: result.insertId
     });
-
   } catch (error) {
     console.error("Database Error:", error);
     res.status(500).json({
@@ -488,124 +472,160 @@ app.post('/trip-confirmations', async (req, res) => {
   }
 });
 
-// Configure timezone globally
+// Update trip confirmation status
 app.put('/trip-confirmations/:userId/:carId/:startDate', async (req, res) => {
-    try {
-        console.group('⏺️ Backend Request Received');
-        console.log('🔹 Raw Parameters:', req.params);
-        console.log('🔹 Request Body:', req.body);
-        
-        // Date Handling
-        const decodedDate = decodeURIComponent(req.params.startDate);
-        console.log('🔹 Decoded Date String:', decodedDate);
-        
-        const dateObj = new Date(decodedDate);
-        console.log('🔹 Date Object:', dateObj);
-        console.log('🔹 Local Time String:', dateObj.toString());
-        console.log('🔹 ISO String:', dateObj.toISOString());
-        
-        // Database Query
-        console.log('🚀 Executing DB Query...');
-        // const [result] = await db.query(
-        //     `UPDATE trip_confirmations 
-        //      SET status = ? 
-        //      WHERE userID = ? AND car_id = ? AND start_date = ?`,
-        //     [req.body.status, req.params.userId, req.params.carId, dateObj]
-        // );
-        const [result] = await db.promise().query( // ← Add .promise()
+  try {
+    console.group('⏺️ Backend Request Received');
+    console.log('🔹 Raw Parameters:', req.params);
+    console.log('🔹 Request Body:', req.body);
+    
+    // Date Handling
+    const decodedDate = decodeURIComponent(req.params.startDate);
+    console.log('🔹 Decoded Date String:', decodedDate);
+    
+    const dateObj = new Date(decodedDate);
+    console.log('🔹 Date Object:', dateObj);
+    console.log('🔹 Local Time String:', dateObj.toString());
+    console.log('🔹 ISO String:', dateObj.toISOString());
+    
+    // Database Query
+    console.log('🚀 Executing DB Query...');
+    const [result] = await pool.query(
       `UPDATE trip_confirmations 
        SET status = ? 
        WHERE userID = ? AND car_id = ? AND start_date = ?`,
-      [req.body.status, req.params.userId, req.params.carId, new Date(decodeURIComponent(req.params.startDate))]
+      [req.body.status, req.params.userId, req.params.carId, dateObj]
     );
-        
-        console.log('✅ DB Update Result:', {
-            affectedRows: result.affectedRows,
-            changedRows: result.changedRows
-        });
-        
-        console.groupEnd();
-        
-        if (result.affectedRows === 1) {
-            return res.json({ 
-                success: true,
-                debug: {
-                    receivedParams: req.params,
-                    receivedBody: req.body,
-                    processedDate: dateObj.toISOString()
-                }
-            });
-        }
-        
-        return res.status(404).json({ 
-            success: false,
-            message: "No matching booking found",
-            debug: req.params
-        });
-        
-    } catch (error) {
-        console.error('❌ Backend Error:', error);
-        return res.status(500).json({ 
-            success: false,
-            error: error.message,
-            stack: error.stack 
-        });
-    }
-});
-  // Get booking requests for owner (unchanged but included for completeness)
-  app.get('/owner-requests', async (req, res) => {
-    const { ownerId } = req.query;
-  
-    if (!ownerId) {
-      return res.status(400).json({
-        success: false,
-        message: "Owner ID is required"
-      });
-    }
-  
-    try {
-      const [requests] = await db.promise().query(
-        `SELECT 
-           tc.userID, 
-           tc.car_id, 
-           tc.start_date, 
-           tc.end_date, 
-           tc.status,
-           DATEDIFF(tc.end_date, tc.start_date) + 1 as days,
-           c.car_name, 
-           c.model, 
-           c.price_per_day,
-           u.name as user_name,
-           u.phone as user_phone
-         FROM trip_confirmations tc
-         JOIN cars c ON tc.car_id = c.cars_id
-         JOIN users u ON tc.userID = u.userID
-         WHERE c.ownerID = ?
-         ORDER BY tc.start_date DESC`,
-        [ownerId]
-      );
-  
-      // Format dates for frontend
-      const formattedRequests = requests.map(req => ({
-        ...req,
-        start_date: new Date(req.start_date).toISOString(),
-        end_date: new Date(req.end_date).toISOString()
-      }));
-  
-      res.status(200).json({
+    
+    console.log('✅ DB Update Result:', {
+      affectedRows: result.affectedRows,
+      changedRows: result.changedRows
+    });
+    
+    console.groupEnd();
+    
+    if (result.affectedRows === 1) {
+      return res.json({ 
         success: true,
-        requests: formattedRequests
-      });
-  
-    } catch (error) {
-      console.error("Database Error:", error);
-      res.status(500).json({
-        success: false,
-        message: "Failed to fetch booking requests",
-        error: error.message
+        debug: {
+          receivedParams: req.params,
+          receivedBody: req.body,
+          processedDate: dateObj.toISOString()
+        }
       });
     }
-  });
+    
+    return res.status(404).json({ 
+      success: false,
+      message: "No matching booking found",
+      debug: req.params
+    });
+  } catch (error) {
+    console.error('❌ Backend Error:', error);
+    return res.status(500).json({ 
+      success: false,
+      error: error.message,
+      stack: error.stack 
+    });
+  }
+});
+
+// Get user bookings
+app.get('/user-bookings', async (req, res) => {
+  try {
+    const userId = req.query.user_id;
+    
+    const [bookings] = await pool.query(`
+      SELECT 
+        tc.userID,
+        tc.car_id,
+        c.cars_id,
+        c.car_name,
+        c.model,
+        c.price_per_day,
+        tc.status,
+        DATE_FORMAT(tc.start_date, '%Y-%m-%d') AS start_date,
+        DATE_FORMAT(tc.end_date, '%Y-%m-%d') AS end_date
+      FROM trip_confirmations tc
+      INNER JOIN cars c ON tc.car_id = c.cars_id
+      WHERE tc.userID = ?
+      ORDER BY tc.start_date DESC
+      LIMIT 10
+    `, [userId]);
+
+
+    console.log("Sending bookings:", bookings); // Debug log
+
+    res.json({ 
+      success: true,
+      bookings 
+    });
+  } catch (error) {
+    console.error("Database error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to fetch bookings",
+      error: error.message
+    });
+  }
+});
+// Get booking requests for owner
+app.get('/owner-requests', async (req, res) => {
+  const { ownerId } = req.query;
+  
+  if (!ownerId) {
+    return res.status(400).json({
+      success: false,
+      message: "Owner ID is required"
+    });
+  }
+
+  try {
+    const [requests] = await pool.query(
+      `SELECT 
+        tc.userID, 
+        tc.car_id, 
+        tc.start_date, 
+        tc.end_date, 
+        tc.status,
+        DATEDIFF(tc.end_date, tc.start_date) + 1 as days,
+        c.car_name, 
+        c.model, 
+        c.price_per_day,
+        u.name as user_name,
+        u.phone as user_phone
+      FROM trip_confirmations tc
+      JOIN cars c ON tc.car_id = c.cars_id
+      JOIN users u ON tc.userID = u.userID
+      WHERE c.ownerID = ?
+      ORDER BY tc.start_date DESC`,
+      [ownerId]
+    );
+
+    // Format dates for frontend
+    const formattedRequests = requests.map(req => ({
+      ...req,
+      start_date: new Date(req.start_date).toISOString(),
+      end_date: new Date(req.end_date).toISOString()
+    }));
+
+    res.status(200).json({
+      success: true,
+      requests: formattedRequests
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch booking requests",
+      error: error.message
+    });
+  }
+});
+
+app.use((req, res) => {
+  res.status(404).send("Endpoint not found");
+});
 
 // Start Server
 app.listen(PORT, () => {

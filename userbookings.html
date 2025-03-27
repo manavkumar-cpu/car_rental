@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Bookings</title>
+<style>
+    /* General Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f5f7fa;
+    margin: 0;
+    padding: 20px;
+    color: #333;
+}
+
+h2 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    margin-top: 0;
+}
+
+/* Booking Status Container */
+#booking-status-container {
+    max-width: 800px;
+    margin: 30px auto;
+    background: white;
+    padding: 25px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Status Alerts */
+.alert {
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.alert-info {
+    background-color: #e7f5ff;
+    border-left: 4px solid #3498db;
+    color: #2c3e50;
+}
+
+.alert-success {
+    background-color: #ebfbee;
+    border-left: 4px solid #2ecc71;
+    color: #27ae60;
+}
+
+.alert-danger {
+    background-color: #fff5f5;
+    border-left: 4px solid #e74c3c;
+    color: #c0392b;
+}
+
+/* Booking Details */
+#booking-details {
+    margin-top: 30px;
+    border-top: 1px solid #eee;
+    padding-top: 20px;
+}
+
+.booking-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.booking-card h3 {
+    margin: 0;
+    color: #3498db;
+}
+
+.booking-meta {
+    color: #7f8c8d;
+    font-size: 0.9em;
+}
+
+.booking-status {
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 0.8em;
+}
+
+.status-pending {
+    background: #f39c12;
+    color: white;
+}
+
+.status-confirmed {
+    background: #2ecc71;
+    color: white;
+}
+
+.status-rejected {
+    background: #e74c3c;
+    color: white;
+}
+
+/* Action Buttons */
+.action-buttons {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.btn {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-primary {
+    background: #3498db;
+    color: white;
+}
+
+.btn-danger {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .booking-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+}
+</style>
+</head>
+<body>
+    <div id="booking-status-container">
+        <h2>Booking Status</h2>
+        <div id="status-message"></div>
+        <div id="booking-details"></div>
+        <div id="error-message"></div>
+    </div>
+
+   <script>
+    document.addEventListener("DOMContentLoaded", async () => {
+        try {
+            // Get URL parameters and user ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const status = urlParams.get('booking_status'); // pending/confirmed/rejected
+            const urlCarId = urlParams.get('car_id');
+            const userId = localStorage.getItem('userID');
+
+            if (!userId) {
+                window.location.href = "login.html";
+                return;
+            }
+
+            // Fetch booking details
+            const bookings = await fetchUserBookings(userId);
+            
+            // Display status message if URL has status parameter
+             displayStatusMessage(status); 
+            
+            // Display booking details - pass both bookings and urlCarId
+            displayBookingDetails(bookings, urlCarId);
+
+
+        } catch (error) {
+            console.error("Page load error:", error);
+            showError(error.message || "Failed to load booking details");
+        }
+    });
+
+    // Fetch user bookings from backend
+    async function fetchUserBookings(userId) {
+        try {
+            const response = await fetch(`http://localhost:3000/user-bookings?user_id=${userId}`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch bookings: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            if (!data?.success) {
+                throw new Error(data?.message || "Invalid data received from server");
+            }
+
+            if (!Array.isArray(data.bookings)) {
+                console.warn("Bookings data is not an array:", data.bookings);
+                return [];
+            }
+
+            return data.bookings;
+
+        } catch (error) {
+            console.error("Fetch error:", error);
+            throw new Error("Could not load your bookings. Please try again later.");
+        }
+    }
+
+    // Display status message based on URL parameter
+    function displayStatusMessage(status) {
+        try {
+            const statusMessage = document.getElementById('status-message');
+            
+            if (!status || !statusMessage) return;
+            
+            const statusConfig = {
+                pending: {
+                    class: 'alert-info',
+                    icon: 'fa-clock',
+                    text: 'Your booking request is pending owner approval.'
+                },
+                confirmed: {
+                    class: 'alert-success',
+                    icon: 'fa-check-circle',
+                    text: 'Owner has confirmed your booking!'
+                },
+                rejected: {
+                    class: 'alert-danger',
+                    icon: 'fa-times-circle',
+                    text: 'Owner declined your booking request.'
+                }
+            };
+
+            if (statusConfig[status]) {
+                const config = statusConfig[status];
+                statusMessage.innerHTML = `
+                    <div class="alert ${config.class}">
+                        <i class="fas ${config.icon}"></i> ${config.text}
+                    </div>
+                `;
+                statusMessage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error("Error displaying status message:", error);
+        }
+    }
+
+    // Display booking details with improved error handling
+    function displayBookingDetails(bookings, urlCarId = null) {
+        try {
+            const bookingDetails = document.getElementById('booking-details');
+            if (!bookingDetails) {
+                throw new Error("Booking details container not found");
+            }
+
+            // Validate bookings data
+            if (!bookings || !Array.isArray(bookings) || bookings.length === 0) {
+                bookingDetails.innerHTML = `
+                    <div class="alert alert-warning">
+                        No bookings found.
+                    </div>
+                `;
+                return;
+            }
+
+            // Find the relevant booking
+            let relevantBooking;
+            
+            if (urlCarId) {
+                // Try to find booking matching the URL car_id
+                relevantBooking = bookings.find(b => b?.car_id == urlCarId);
+                
+                if (!relevantBooking) {
+                    console.warn(`No booking found for car ID: ${urlCarId}`);
+                }
+            }
+
+            // Fallback to first booking if no match found
+            if (!relevantBooking) {
+                relevantBooking = bookings[0];
+            }
+
+            // Validate the booking object
+            if (!relevantBooking || typeof relevantBooking !== 'object') {
+                throw new Error("Invalid booking data");
+            }
+
+            // Safely extract values with fallbacks
+            const carName = relevantBooking.car_name || 'Unknown Car';
+            const model = relevantBooking.model || 'N/A';
+            const status = relevantBooking.status || 'Unknown';
+            const pricePerDay = relevantBooking.price_per_day || 0;
+            
+            // Format dates safely
+            const startDate = formatDate(relevantBooking.start_date);
+            const endDate = formatDate(relevantBooking.end_date);
+            const totalPrice = calculateTotalPrice(relevantBooking);
+
+            // Render the booking card
+            bookingDetails.innerHTML = `
+                <div class="booking-card">
+                    <h3>${carName}</h3>
+                    <p><strong>Model:</strong> ${model}</p>
+                    <p><strong>Car ID:</strong> ${relevantBooking.car_id || 'N/A'}</p>
+                    <p><strong>Dates:</strong> ${startDate} to ${endDate}</p>
+                    <p><strong>Status:</strong> 
+                        <span class="status-badge ${status.toLowerCase()}">${status}</span>
+                    </p>
+                    <p><strong>Price per day:</strong> ₹${pricePerDay}</p>
+                    <p><strong>Total Price:</strong> ₹${totalPrice}</p>
+                </div>
+            `;
+
+            // Store car ID in hidden field if needed
+            const carIdField = document.getElementById("car-id");
+            if (carIdField && relevantBooking.car_id) {
+                carIdField.value = relevantBooking.car_id;
+                console.log("Set car ID field to:", relevantBooking.car_id);
+            }
+
+        } catch (error) {
+            console.error("Error displaying booking details:", error);
+            showError("Could not display booking details. Please try again.");
+        }
+    }
+
+    // Helper function to format dates with validation
+    function formatDate(dateString) {
+        try {
+            if (!dateString) return 'N/A';
+            
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) return 'Invalid Date';
+            
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return date.toLocaleDateString('en-US', options);
+        } catch (error) {
+            console.error("Error formatting date:", error);
+            return 'N/A';
+        }
+    }
+
+    // Helper function to calculate total price with validation
+    function calculateTotalPrice(booking) {
+        try {
+            if (!booking?.start_date || !booking?.end_date || !booking.price_per_day) {
+                return 'N/A';
+            }
+            
+            const start = new Date(booking.start_date);
+            const end = new Date(booking.end_date);
+            
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                return 'Invalid Date';
+            }
+            
+            // Calculate days (inclusive of both start and end dates)
+            const timeDiff = end - start;
+            const days = Math.ceil(timeDiff / (1000 * 60 * 60 * 24)) + 1;
+            
+            if (days <= 0) return 'N/A';
+            
+            return days * booking.price_per_day;
+        } catch (error) {
+            console.error("Error calculating price:", error);
+            return 'N/A';
+        }
+    }
+
+    // Display error message
+    function showError(message) {
+        try {
+            const errorElement = document.getElementById('error-message') || document.body;
+            errorElement.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> 
+                    ${message || 'An unknown error occurred'}
+                </div>
+            `;
+        } catch (error) {
+            console.error("Error displaying error message:", error);
+            // Fallback to console and alert if DOM manipulation fails
+            alert(`Error: ${message}`);
+        }
+    }
+</script>
+</body>
+</html>

@@ -320,7 +320,7 @@
                         
                         if (result.success) {
                             alert("Booking request sent to owner. You'll be notified when confirmed.");
-                            window.location.href = "usermainpage.html";
+                            window.location.href = `userbookings.html?booking_status=pending&car_id=${carId}`;
                         } else {
                             throw new Error(result.message || "Booking failed");
                         }
