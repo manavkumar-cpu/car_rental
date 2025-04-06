@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickRide - Late Returns</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+    
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+        }
+    
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+    
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+    
+        h1 {
+            color: #094e5b;
+            font-size: 28px;
+        }
+    
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+    
+        .nav-links a {
+            color: #094e5b;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+    
+        .nav-links a:hover {
+            background-color: #e1e5eb;
+        }
+    
+        .nav-links a.active {
+            background-color: #094e5b;
+            color: white;
+        }
+    
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+    
+        .logout-btn:hover {
+            background-color: #bb2d3b;
+        }
+    
+        .late-returns-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+    
+        .return-item {
+            border: 1px solid #e1e5eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+    
+        .return-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+    
+        .return-car {
+            font-weight: bold;
+            color: #094e5b;
+            font-size: 18px;
+        }
+    
+        .return-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            background-color: #f8d7da;
+            color: #721c24;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    
+        .return-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+    
+        .detail-group p:first-child {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+    
+        .fine-amount {
+            color: #dc3545;
+            font-weight: bold;
+        }
+    
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+    
+        .loading i {
+            margin-right: 10px;
+        }
+        .return-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .returned-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.3s;
+        }
+        
+        .returned-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .close-modal {
+            font-size: 24px;
+            cursor: pointer;
+        }
+        
+        .penalty-details {
+            margin: 20px 0;
+        }
+        
+        .penalty-amount {
+            font-weight: bold;
+            color: #dc3545;
+            font-size: 18px;
+        }
+    
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .return-details {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Late Returns</h1>
+                <p id="ownerNameDisplay"></p>
+            </div>
+            <div class="nav-links">
+                <a href="ownermainpage.html">My Cars</a>
+                <a href="owner-requests.html">Booking Requests</a>
+                <a href="owner-late_returns.html" class="active">Late Returns</a>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </header>
+
+        <div class="late-returns-container">
+            <div id="returnsList">
+                <div class="loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    Loading late returns...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Penalty Confirmation Modal -->
+    <div id="penaltyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Car Return Confirmation</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="penalty-details">
+                <p>The car has been returned successfully.</p>
+                <p>Days late: <span id="modalDaysLate">0</span></p>
+                <p>Daily penalty rate: 1.5x the daily price</p>
+                <p>Total penalty: <span class="penalty-amount" id="modalTotalPenalty">₹0</span></p>
+            </div>
+            <button id="confirmPenaltyBtn" class="returned-btn">Confirm</button>
+        </div>
+    </div>
+
+    <script>
+        // Check if owner is logged in
+        function checkLogin() {
+            const ownerID = localStorage.getItem("ownerID");
+            const ownerName = localStorage.getItem("owner_Name");
+            
+            if (!ownerID) {
+                alert("Please login first");
+                window.location.href = "ownerloginpage.html";
+                return null;
+            }
+            
+            if (ownerName) {
+                document.getElementById("ownerNameDisplay").textContent = `Welcome, ${ownerName}`;
+            }
+            
+            return ownerID;
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        }
+
+        // Calculate days late and penalty
+        function calculateLateDetails(endDate, pricePerDay) {
+            const now = new Date();
+            const end = new Date(endDate);
+            const diffTime = now - end;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            
+            if (diffDays <= 0) return { daysLate: 0, penalty: 0 };
+            
+            const penaltyRate = 1.5; // 1.5x the daily price
+            const penalty = diffDays * (pricePerDay * penaltyRate);
+            
+            return { daysLate: diffDays, penalty };
+        }
+
+        // Show penalty modal
+        function showPenaltyModal(daysLate, penalty, tripId) {
+            const modal = document.getElementById("penaltyModal");
+            document.getElementById("modalDaysLate").textContent = daysLate;
+            document.getElementById("modalTotalPenalty").textContent = `₹${penalty.toFixed(2)}`;
+            
+            // Store tripId in the confirm button
+            const confirmBtn = document.getElementById("confirmPenaltyBtn");
+            confirmBtn.dataset.tripId = tripId;
+            confirmBtn.dataset.penalty = penalty;
+            
+            modal.style.display = "flex";
+            
+            // Close modal handlers
+            document.querySelector(".close-modal").onclick = () => modal.style.display = "none";
+            window.onclick = (event) => {
+                if (event.target === modal) {
+                    modal.style.display = "none";
+                }
+            };
+        }
+
+        // Mark car as returned
+        async function markAsReturned(tripId, penalty) {
+            try {
+              console.log("Marking trip", tripId, "as returned with penalty", penalty);
+              
+              const response = await fetch('http://localhost:3000/mark-returned', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  tripId,
+                  penalty,
+                  actualReturnDate: formatDateForMySQL(new Date()) // Use this new function
+                })
+              });
+          
+              if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || "Failed to mark as returned");
+              }
+          
+              const result = await response.json();
+              alert(result.message);
+              loadLateReturns(); // Refresh the list
+              
+            } catch (error) {
+              console.error("Error:", error);
+              alert(`Error: ${error.message}`);
+            }
+          }
+          
+          // Add this helper function for better user feedback
+          function showToast(message) {
+            const toast = document.createElement("div");
+            toast.style.position = "fixed";
+            toast.style.bottom = "20px";
+            toast.style.right = "20px";
+            toast.style.backgroundColor = "#28a745";
+            toast.style.color = "white";
+            toast.style.padding = "10px 20px";
+            toast.style.borderRadius = "5px";
+            toast.style.zIndex = "1000";
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+              toast.remove();
+            }, 3000);
+          }
+          function formatDateForMySQL(date) {
+            return date.toISOString().slice(0, 19).replace('T', ' ');
+          }
+               // Load late returns
+               async function loadLateReturns() {
+                const ownerID = checkLogin();
+                if (!ownerID) return;
+                
+                try {
+                    const returnsList = document.getElementById("returnsList");
+                    
+                    // Clear existing content with loading state
+                    returnsList.innerHTML = `
+                        <div class="loading">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            Loading late returns...
+                        </div>
+                    `;
+            
+                    const response = await fetch(`http://localhost:3000/owner-late-returns?ownerId=${ownerID}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Failed to load late returns: ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (!result.success) {
+                        throw new Error(result.message || "Failed to fetch late returns");
+                    }
+                    
+                    // Use the render function for cleaner code
+                    renderReturnsList(result.returns);
+                    
+                } catch (error) {
+                    console.error("Error loading late returns:", error);
+                    showErrorState(error.message);
+                }
+            }
+            
+            function renderReturnsList(returns) {
+                const returnsList = document.getElementById("returnsList");
+                
+                if (!returns || returns.length === 0) {
+                    returnsList.innerHTML = '<div class="empty-state">No late returns found</div>';
+                    return;
+                }
+                
+                returnsList.innerHTML = returns.map(returnItem => {
+                    const { daysLate, penalty } = calculateLateDetails(returnItem.end_date, returnItem.price_per_day);
+                    
+                    return `
+                        <div class="return-item" data-trip-id="${returnItem.trip_id}">
+                            <div class="return-header">
+                                <div class="return-car">${returnItem.car_name} ${returnItem.model}</div>
+                                <div class="return-status">${daysLate} day(s) late</div>
+                            </div>
+                            
+                            <div class="return-details">
+                                <div class="detail-group">
+                                    <p>Rented By</p>
+                                    <p>${returnItem.user_name}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>User Contact</p>
+                                    <p>${returnItem.user_phone || 'N/A'}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>End Date</p>
+                                    <p>${formatDate(returnItem.end_date)}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>Days Late</p>
+                                    <p>${daysLate}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>Daily Price</p>
+                                    <p>₹${returnItem.price_per_day}</p>
+                                </div>
+                                <div class="detail-group">
+                                    <p>Estimated Penalty</p>
+                                    <p class="fine-amount">₹${penalty.toFixed(2)}</p>
+                                </div>
+                            </div>
+                            
+                            <div class="return-actions">
+                                <button class="returned-btn" 
+                                    onclick="showPenaltyModal(${daysLate}, ${penalty}, ${returnItem.trip_id})">
+                                    Mark as Returned
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            function showErrorState(message) {
+                document.getElementById("returnsList").innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        ${message}
+                        <button onclick="loadLateReturns()" class="retry-btn">
+                            <i class="fas fa-sync-alt"></i> Try Again
+                        </button>
+                    </div>
+                `;
+            }
+            
+            // Helper function for the retry button style
+            function addRetryButtonStyle() {
+                const style = document.createElement('style');
+                style.textContent = `
+                    .retry-btn {
+                        background-color: #094e5b;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 4px;
+                        margin-top: 10px;
+                        cursor: pointer;
+                        transition: background-color 0.3s;
+                    }
+                    .retry-btn:hover {
+                        background-color: #062d37;
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+            
+            // Call this when the page loads
+            addRetryButtonStyle();
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem("ownerID");
+            localStorage.removeItem("owner_Name");
+            window.location.href = "ownerloginpage.html";
+        }
+
+        // Initialize page
+        document.addEventListener("DOMContentLoaded", () => {
+            if (checkLogin()) {
+                loadLateReturns();
+            }
+            
+            document.getElementById("logoutBtn").addEventListener("click", logout);
+            
+            // Confirm penalty button handler
+            document.getElementById("confirmPenaltyBtn").addEventListener("click", function() {
+                const tripId = this.dataset.tripId;
+                const penalty = parseFloat(this.dataset.penalty);
+                markAsReturned(tripId, penalty);
+            });
+        });
+    </script>
+</body>
+</html>

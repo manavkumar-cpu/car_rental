@@ -1,4 +1,4 @@
-process.env.TZ = 'Asia/Kolkata'; // Top of file
+process.env.TZ = 'Asia/Kolkata'; 
 const mysql = require("mysql2/promise");
 const express = require("express");
 const cors = require("cors");
@@ -620,6 +620,94 @@ app.get('/owner-requests', async (req, res) => {
       message: "Failed to fetch booking requests",
       error: error.message
     });
+  }
+});
+
+// Add this to your server.js file
+// Add this to your server.js
+app.post('/mark-returned', async (req, res) => {
+  const { tripId, penalty, actualReturnDate } = req.body;
+  
+  try {
+    await pool.query('START TRANSACTION');
+    
+    // 1. Update trip_returns
+    await pool.query(
+      `INSERT INTO trip_returns (trip_id, actual_return_date)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE actual_return_date = VALUES(actual_return_date)`,
+      [tripId, actualReturnDate]
+    );
+
+    // 2. Update late_fees
+    await pool.query(
+      `INSERT INTO late_fees (trip_id, penalty)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE penalty = VALUES(penalty)`,
+      [tripId, penalty]
+    );
+
+    await pool.query('COMMIT');
+    res.json({ success: true, message: "Return recorded successfully" });
+    
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    console.error("Database error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Database operation failed",
+      error: error.message
+    });
+  }
+});
+
+// Update your existing owner-late-returns endpoint to include trip_id
+app.get("/owner-late-returns", async (req, res) => {
+  const { ownerId } = req.query;
+  
+  if (!ownerId) {
+      return res.status(400).json({
+          success: false,
+          message: "Owner ID is required"
+      });
+  }
+
+  try {
+      const [returns] = await pool.query(
+          `SELECT 
+              t.trip_id,
+              tc.userID, 
+              tc.car_id, 
+              tc.end_date,
+              c.car_name, 
+              c.model,
+              c.price_per_day,
+              u.name as user_name,
+              u.phone as user_phone
+          FROM trips t
+          JOIN trip_confirmations tc ON t.userID = tc.userID AND t.car_id = tc.car_id AND t.start_date = tc.start_date
+          JOIN cars c ON tc.car_id = c.cars_id
+          JOIN users u ON tc.userID = u.userID
+          LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+          WHERE c.ownerID = ? 
+          AND tc.status = 'Confirmed'
+          AND tc.end_date < NOW()
+          AND (tr.actual_return_date IS NULL OR tr.actual_return_date > tc.end_date)
+          ORDER BY tc.end_date DESC`,
+          [ownerId]
+      );
+
+      res.status(200).json({
+          success: true,
+          returns
+      });
+  } catch (error) {
+      console.error("Database Error:", error);
+      res.status(500).json({
+          success: false,
+          message: "Failed to fetch late returns",
+          error: error.message
+      });
   }
 });
 
