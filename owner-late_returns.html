@@ -6,6 +6,21 @@
     <title>QuickRide - Late Returns</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* Add to your existing styles */
+.return-item {
+    transition: all 0.5s ease;
+    will-change: transform, opacity;
+}
+
+.penalty-modal {
+    transition: opacity 0.3s ease;
+}
+
+/* Smooth modal close animation */
+.modal.hiding {
+    opacity: 0;
+    pointer-events: none;
+}
         * {
             margin: 0;
             padding: 0;
@@ -304,6 +319,7 @@
         // Show penalty modal
         function showPenaltyModal(daysLate, penalty, tripId) {
             const modal = document.getElementById("penaltyModal");
+            modal.classList.remove('hiding'); 
             document.getElementById("modalDaysLate").textContent = daysLate;
             document.getElementById("modalTotalPenalty").textContent = `₹${penalty.toFixed(2)}`;
             
@@ -315,45 +331,81 @@
             modal.style.display = "flex";
             
             // Close modal handlers
-            document.querySelector(".close-modal").onclick = () => modal.style.display = "none";
-            window.onclick = (event) => {
-                if (event.target === modal) {
+            document.querySelector(".close-modal").onclick = () => {
+                const modal = document.getElementById("penaltyModal");
+                modal.classList.add('hiding');
+                setTimeout(() => {
                     modal.style.display = "none";
-                }
+                }, 300); // Match this with CSS transition duration
             };
         }
 
         // Mark car as returned
         async function markAsReturned(tripId, penalty) {
             try {
-              console.log("Marking trip", tripId, "as returned with penalty", penalty);
-              
-              const response = await fetch('http://localhost:3000/mark-returned', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  tripId,
-                  penalty,
-                  actualReturnDate: formatDateForMySQL(new Date()) // Use this new function
-                })
-              });
-          
-              if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || "Failed to mark as returned");
-              }
-          
-              const result = await response.json();
-              alert(result.message);
-              loadLateReturns(); // Refresh the list
-              
+                // Get the car item element before making the request
+                const carItem = document.querySelector(`.return-item[data-trip-id="${tripId}"]`);
+                
+                // Visual feedback - start fading immediately
+                if (carItem) {
+                    carItem.style.transition = "all 0.5s ease";
+                    carItem.style.opacity = "0.5";
+                    carItem.style.transform = "translateX(-30px)";
+                }
+        
+                const response = await fetch('http://localhost:3000/mark-returned', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tripId,
+                        penalty,
+                        actualReturnDate: formatDateForMySQL(new Date())
+                    })
+                });
+        
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || "Failed to mark as returned");
+                }
+        
+                const result = await response.json();
+                
+                // Close modal first
+                document.getElementById("penaltyModal").style.display = "none";
+                
+                // Complete the fade-out animation
+                if (carItem) {
+                    carItem.style.opacity = "0";
+                    carItem.style.transform = "translateX(-100px)";
+                    
+                    // Remove after animation completes
+                    carItem.addEventListener('transitionend', () => {
+                        carItem.remove();
+                        
+                        // Check if list is now empty
+                        const returnsList = document.getElementById("returnsList");
+                        if (returnsList.children.length === 0) {
+                            returnsList.innerHTML = '<div class="empty-state">No late returns found</div>';
+                        }
+                    });
+                }
+                
+                showToast(result.message || "Car return recorded successfully!");
+                
             } catch (error) {
-              console.error("Error:", error);
-              alert(`Error: ${error.message}`);
+                console.error("Error:", error);
+                
+                // Reset the item if error occurred
+                const carItem = document.querySelector(`.return-item[data-trip-id="${tripId}"]`);
+                if (carItem) {
+                    carItem.style.opacity = "1";
+                    carItem.style.transform = "none";
+                }
+                
+                alert(`Error: ${error.message}`);
             }
-          }
+        }
+        
           
           // Add this helper function for better user feedback
           function showToast(message) {
@@ -384,32 +436,30 @@
                 
                 try {
                     const returnsList = document.getElementById("returnsList");
+                    returnsList.innerHTML = `<div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>`;
                     
-                    // Clear existing content with loading state
-                    returnsList.innerHTML = `
-                        <div class="loading">
-                            <i class="fas fa-spinner fa-spin"></i>
-                            Loading late returns...
-                        </div>
-                    `;
-            
-                    const response = await fetch(`http://localhost:3000/owner-late-returns?ownerId=${ownerID}`);
+                    // Add cache-buster to prevent stale data
+                    const response = await fetch(`http://localhost:3000/owner-late-returns?ownerId=${ownerID}&t=${Date.now()}`);
                     
-                    if (!response.ok) {
-                        throw new Error(`Failed to load late returns: ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`Server error: ${response.status}`);
                     
                     const result = await response.json();
                     
-                    if (!result.success) {
-                        throw new Error(result.message || "Failed to fetch late returns");
+                    if (!result.success) throw new Error(result.message || "Data load failed");
+                    
+                    // Clear existing items
+                    returnsList.innerHTML = '';
+                    
+                    if (result.returns.length === 0) {
+                        returnsList.innerHTML = '<div class="empty-state">All cars returned on time!</div>';
+                        return;
                     }
                     
-                    // Use the render function for cleaner code
+                    // Rebuild list
                     renderReturnsList(result.returns);
                     
                 } catch (error) {
-                    console.error("Error loading late returns:", error);
+                    console.error("Load failed:", error);
                     showErrorState(error.message);
                 }
             }

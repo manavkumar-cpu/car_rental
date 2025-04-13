@@ -533,9 +533,30 @@ app.put('/trip-confirmations/:userId/:carId/:startDate', async (req, res) => {
 // Get user bookings
 app.get('/user-bookings', async (req, res) => {
   try {
-    const userId = req.query.user_id;
+    console.log("🔍 /user-bookings endpoint called");
     
-    const [bookings] = await pool.query(`
+    const userId = req.query.user_id;
+    const startDate = req.query.start_date;
+    const endDate = req.query.end_date;
+    const carId = req.query.car_id;
+    
+    console.log("📝 Request parameters:", {
+      userId,
+      startDate,
+      endDate,
+      carId
+    });
+    
+    // Validate required parameters
+    if (!userId) {
+      console.error("❌ Missing required parameter: user_id");
+      return res.status(400).json({ 
+        success: false, 
+        message: "User ID is required" 
+      });
+    }
+    
+    let query = `
       SELECT 
         tc.userID,
         tc.car_id,
@@ -544,31 +565,78 @@ app.get('/user-bookings', async (req, res) => {
         c.model,
         c.price_per_day,
         tc.status,
-        DATE_FORMAT(tc.start_date, '%Y-%m-%d') AS start_date,
-        DATE_FORMAT(tc.end_date, '%Y-%m-%d') AS end_date
+        DATE_FORMAT(tc.start_date, '%Y-%m-%d %H:%i:%s') AS start_date,
+        DATE_FORMAT(tc.end_date, '%Y-%m-%d %H:%i:%s') AS end_date
       FROM trip_confirmations tc
       INNER JOIN cars c ON tc.car_id = c.cars_id
       WHERE tc.userID = ?
-      ORDER BY tc.start_date DESC
-      LIMIT 10
-    `, [userId]);
-
-
-    console.log("Sending bookings:", bookings); // Debug log
+    `;
+    
+    const queryParams = [userId];
+    
+    // Add car_id filtering if provided
+    if (carId) {
+      console.log("🚗 Adding car_id filter:", carId);
+      query += ` AND tc.car_id = ?`;
+      queryParams.push(carId);
+    }
+    
+    // Add date filtering if both start and end dates are provided
+    if (startDate && endDate) {
+      console.log("📅 Adding date filters:", { startDate, endDate });
+      
+      // Format dates to ensure consistent comparison
+      const formattedStartDate = new Date(startDate).toISOString().slice(0, 10); // Get just the date part
+      const formattedEndDate = new Date(endDate).toISOString().slice(0, 10); // Get just the date part
+      
+      console.log("📅 Formatted dates (date only):", {
+        original: { startDate, endDate },
+        formatted: { formattedStartDate, formattedEndDate }
+      });
+      
+      // Use DATE() function to compare only the date part
+      query += ` AND DATE(tc.start_date) = ? AND DATE(tc.end_date) = ?`;
+      queryParams.push(formattedStartDate, formattedEndDate);
+    }
+    
+    query += ` ORDER BY tc.start_date DESC`;
+    
+    console.log("🔍 Executing query:", query);
+    console.log("📝 Query parameters:", queryParams);
+    
+    const [bookings] = await pool.query(query, queryParams);
+    console.log("✅ Query result count:", bookings.length);
+    
+    // Log each booking's dates for debugging
+    bookings.forEach((booking, index) => {
+      console.log(`📊 Booking ${index + 1}:`, {
+        car_id: booking.car_id,
+        start_date: booking.start_date,
+        end_date: booking.end_date,
+        status: booking.status
+      });
+    });
 
     res.json({ 
       success: true,
-      bookings 
+      bookings: bookings
     });
   } catch (error) {
-    console.error("Database error:", error);
+    console.error("❌ Error in /user-bookings:", {
+      message: error.message,
+      stack: error.stack,
+      query: error.sql,
+      parameters: error.parameters
+    });
+    
     res.status(500).json({ 
-      success: false,
+      success: false, 
       message: "Failed to fetch bookings",
       error: error.message
     });
   }
 });
+
 // Get booking requests for owner
 app.get('/owner-requests', async (req, res) => {
   const { ownerId } = req.query;
@@ -588,6 +656,7 @@ app.get('/owner-requests', async (req, res) => {
         tc.start_date, 
         tc.end_date, 
         tc.status,
+        tc.created_at,
         DATEDIFF(tc.end_date, tc.start_date) + 1 as days,
         c.car_name, 
         c.model, 
@@ -598,7 +667,7 @@ app.get('/owner-requests', async (req, res) => {
       JOIN cars c ON tc.car_id = c.cars_id
       JOIN users u ON tc.userID = u.userID
       WHERE c.ownerID = ?
-      ORDER BY tc.start_date DESC`,
+      ORDER BY tc.created_at DESC`,
       [ownerId]
     );
 
@@ -606,7 +675,8 @@ app.get('/owner-requests', async (req, res) => {
     const formattedRequests = requests.map(req => ({
       ...req,
       start_date: new Date(req.start_date).toISOString(),
-      end_date: new Date(req.end_date).toISOString()
+      end_date: new Date(req.end_date).toISOString(),
+      created_at: new Date(req.created_at).toISOString()
     }));
 
     res.status(200).json({

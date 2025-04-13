@@ -1,12 +1,20 @@
-app.get("/get-cities", (req, res) => {
-    const sql = "SELECT DISTINCT city FROM cars";
-    db.query(sql, (err, results) => {
-        if (err) {
-            console.error("⚠️ Database Query Error:", err);
-            return res.status(500).json({ message: "Database error" });
-        }
-
-        const cities = results.map(row => row.city);
-        res.status(200).json({ cities });
-    });
-});
+const [requests] = await pool.query(
+      `SELECT 
+        tc.userID, 
+        tc.car_id, 
+        tc.start_date, 
+        tc.end_date, 
+        tc.status,
+        DATEDIFF(tc.end_date, tc.start_date) + 1 as days,
+        c.car_name, 
+        c.model, 
+        c.price_per_day,
+        u.name as user_name,
+        u.phone as user_phone
+      FROM trip_confirmations tc
+      JOIN cars c ON tc.car_id = c.cars_id
+      JOIN users u ON tc.userID = u.userID
+      WHERE c.ownerID = ?
+      ORDER BY tc.start_date DESC`,
+      [ownerId]
+    );

@@ -87,10 +87,14 @@
             // ✅ Save dates in localStorage when changed
             fromDateInput.addEventListener("change", () => {
                 localStorage.setItem("fromDate", fromDateInput.value);
+                // Also store in the format userbookings.html expects
+                localStorage.setItem("booking_start_date", fromDateInput.value);
             });
         
             toDateInput.addEventListener("change", () => {
                 localStorage.setItem("toDate", toDateInput.value);
+                // Also store in the format userbookings.html expects
+                localStorage.setItem("booking_end_date", toDateInput.value);
             });
         
              // Search button click handler - ensure dates are properly encoded
@@ -104,9 +108,31 @@
                     return;
                 }
                 
+                // Store dates in the format userbookings.html expects
+                localStorage.setItem("booking_start_date", fromDate);
+                localStorage.setItem("booking_end_date", toDate);
+                
+                // Also store as a single object for easier retrieval
+                localStorage.setItem("mainpage_dates", JSON.stringify({
+                    start_date: fromDate,
+                    end_date: toDate
+                }));
+                
                 // Convert dates to ISO strings for consistency
                 const fromISO = new Date(fromDate).toISOString();
                 const toISO = new Date(toDate).toISOString();
+                
+                console.log("Stored dates:", {
+                    fromDate,
+                    toDate,
+                    fromISO,
+                    toISO,
+                    localStorage: {
+                        booking_start_date: localStorage.getItem("booking_start_date"),
+                        booking_end_date: localStorage.getItem("booking_end_date"),
+                        mainpage_dates: localStorage.getItem("mainpage_dates")
+                    }
+                });
                 
                 window.location.href = `usercarspage.html?location=${encodeURIComponent(location)}&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`;
             });

@@ -160,148 +160,310 @@ h2 {
    <script>
     document.addEventListener("DOMContentLoaded", async () => {
         try {
+            console.log("Page loaded, initializing...");
+            
             // Get URL parameters and user ID
             const urlParams = new URLSearchParams(window.location.search);
-            const urlStatus = urlParams.get('booking_status'); // pending/confirmed/rejected
+            const urlStatus = urlParams.get('booking_status');
             const urlCarId = urlParams.get('car_id');
+            const urlStartDate = urlParams.get('start_date');
+            const urlEndDate = urlParams.get('end_date');
             const userId = localStorage.getItem('userID');
     
+            // Debug: Check all possible sources of dates
+            console.log("Debug - Date Sources:", {
+                urlParams: {
+                    start_date: urlStartDate,
+                    end_date: urlEndDate
+                },
+                localStorage: {
+                    booking_start_date: localStorage.getItem('booking_start_date'),
+                    booking_end_date: localStorage.getItem('booking_end_date'),
+                    mainpage_dates: localStorage.getItem('mainpage_dates')
+                },
+                documentReferrer: document.referrer
+            });
+    
             if (!userId) {
+                console.error("No user ID found in localStorage");
                 window.location.href = "userloginpage.html";
                 return;
             }
     
-            // Fetch booking details
-            const bookings = await fetchUserBookings(userId);
+            // Check if dates are missing
+            if (!urlStartDate || !urlEndDate) {
+                console.warn("Missing date parameters in URL");
+                
+                // Try to get dates from localStorage (set by usermainpage)
+                const mainpageDates = localStorage.getItem('mainpage_dates');
+                if (mainpageDates) {
+                    try {
+                        const dates = JSON.parse(mainpageDates);
+                        console.log("Found dates from mainpage:", dates);
+                        
+                        // Redirect with the dates from mainpage
+                        const newUrl = `userbookings.html?booking_status=${urlStatus}&car_id=${urlCarId}&start_date=${dates.start_date}&end_date=${dates.end_date}`;
+                        console.log("Redirecting with mainpage dates:", newUrl);
+                        window.location.href = newUrl;
+                        return;
+                    } catch (error) {
+                        console.error("Error parsing mainpage dates:", error);
+                    }
+                }
+                
+                // If no dates found, show error message
+                const bookingDetails = document.getElementById('booking-details');
+                if (bookingDetails) {
+                    bookingDetails.innerHTML = `
+                        <div class="alert alert-warning">
+                            <h3>Missing Booking Information</h3>
+                            <p>We couldn't find the booking dates. Please:</p>
+                            <ol>
+                                <li>Go back to the <a href="usermainpage.html">main page</a> and select your dates again</li>
+                                <li>Make sure to select both start and end dates</li>
+                                <li>Contact support if you need assistance</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+                return;
+            }
+
+            // Store the dates in localStorage for future use
+            localStorage.setItem('booking_start_date', urlStartDate);
+            localStorage.setItem('booking_end_date', urlEndDate);
+            localStorage.setItem('mainpage_dates', JSON.stringify({
+                start_date: urlStartDate,
+                end_date: urlEndDate
+            }));
+
+            // Fetch booking details with date parameters
+            console.log("Fetching bookings for user:", userId);
+            const bookings = await fetchUserBookings(userId, urlStartDate, urlEndDate);
+            console.log("Received bookings:", bookings);
             
             // Find the relevant booking
-            let relevantBooking;
-            if (urlCarId) {
-                relevantBooking = bookings.find(b => b?.car_id == urlCarId);
-            }
-            if (!relevantBooking && bookings.length > 0) {
-                relevantBooking = bookings[0];
-            }
-    
-            // Display status message - use booking status if available, otherwise URL parameter
+            console.log("Finding relevant booking...");
+            const relevantBooking = findRelevantBooking(bookings, urlCarId, urlStartDate, urlEndDate);
+            console.log("Selected booking:", relevantBooking);
+            
+            // Display status message
+            console.log("Displaying status message...");
             displayStatusMessage(urlStatus, relevantBooking?.status);
             
             // Display booking details
+            console.log("Displaying booking details...");
             displayBookingDetails(bookings, urlCarId);
 
-                    // Start auto-refresh if status is pending
-        if (relevantBooking?.status.toLowerCase() === 'pending') {
-            startAutoRefresh(urlCarId);
-        }
+            // Start auto-refresh if status is pending
+            if (relevantBooking?.status.toLowerCase() === 'pending') {
+                console.log("Starting auto-refresh for pending booking...");
+                startAutoRefresh(urlCarId);
+            }
 
-    
         } catch (error) {
             console.error("Page load error:", error);
             showError(error.message || "Failed to load booking details");
         }
     });
     // Helper function to find relevant booking
-function findRelevantBooking(bookings, urlCarId) {
-    if (!bookings || !Array.isArray(bookings)) return null;
-    
-    if (urlCarId) {
-        return bookings.find(b => b?.car_id == urlCarId) || bookings[0];
-    }
-    return bookings[0];
-}
+    function findRelevantBooking(bookings, urlCarId, urlStartDate, urlEndDate) {
+        console.log("Finding relevant booking with params:", {
+            bookingsCount: bookings?.length,
+            urlCarId,
+            urlStartDate,
+            urlEndDate
+        });
 
-// Auto-refresh logic
-function startAutoRefresh(carId) {
-    const refreshInterval = 10000; // 10 seconds
-    let refreshCount = 0;
-    const maxRefreshes = 30; // Stop after 5 minutes (30 * 10 seconds)
-
-    const refreshTimer = setInterval(async () => {
-        try {
-            refreshCount++;
-            console.log(`Checking booking status (attempt ${refreshCount})`);
-            
-            const userId = localStorage.getItem('userID');
-            const bookings = await fetchUserBookings(userId);
-            const booking = findRelevantBooking(bookings, carId);
-            
-            if (!booking) {
-                console.warn("Booking not found - stopping refresh");
-                clearInterval(refreshTimer);
-                return;
-            }
-            
-            const currentStatus = booking.status.toLowerCase();
-            
-            if (currentStatus !== 'pending') {
-                // Status changed - refresh the page to show new status
-                console.log(`Status changed to ${currentStatus} - reloading`);
-                clearInterval(refreshTimer);
-                window.location.href = `userbookings.html?booking_status=${currentStatus}&car_id=${carId}`;
-                return;
-            }
-            
-            if (refreshCount >= maxRefreshes) {
-                console.log("Max refresh attempts reached - stopping");
-                clearInterval(refreshTimer);
-                showMessage("Owner is taking longer than expected to respond. We'll notify you when they reply.", "info");
-                return;
-            }
-            
-            // Optional: Update the UI without full page refresh
-            updateStatusUI(booking.status);
-            
-        } catch (error) {
-            console.error("Auto-refresh error:", error);
-            clearInterval(refreshTimer);
+        if (!bookings || !Array.isArray(bookings)) {
+            console.error("Invalid bookings data:", bookings);
+            return null;
         }
-    }, refreshInterval);
 
-    // Show loading indicator
-    showMessage("Checking booking status...", "info");
-}
+        // First try to find exact match with car_id and dates
+        if (urlCarId && urlStartDate && urlEndDate) {
+            console.log("Looking for exact date match...");
+            console.log("Expected dates:", {
+                start: urlStartDate,
+                end: urlEndDate
+            });
 
-// Update UI without full refresh (optional)
-function updateStatusUI(status) {
-    const statusElement = document.getElementById('current-status');
-    if (statusElement) {
-        statusElement.textContent = status;
-        statusElement.className = `status-badge ${status.toLowerCase()}`;
+            const exactMatch = bookings.find(b => {
+                console.log("Checking booking:", {
+                    car_id: b?.car_id,
+                    start_date: b?.start_date,
+                    end_date: b?.end_date
+                });
+                
+                return b?.car_id == urlCarId && 
+                       b?.start_date == urlStartDate && 
+                       b?.end_date == urlEndDate;
+            });
+
+            if (exactMatch) {
+                console.log("Found exact date match:", exactMatch);
+                return exactMatch;
+            }
+            console.log("No exact date match found");
+        }
+
+        // If no exact match, try to find by car_id only
+        if (urlCarId) {
+            console.log("Looking for car_id match...");
+            const carMatch = bookings.find(b => {
+                console.log("Checking booking:", {
+                    car_id: b?.car_id,
+                    start_date: b?.start_date,
+                    end_date: b?.end_date
+                });
+                return b?.car_id == urlCarId;
+            });
+
+            if (carMatch) {
+                console.log("Found car match:", carMatch);
+                return carMatch;
+            }
+            console.log("No car match found");
+        }
+
+        // Fallback to first booking
+        console.log("Using first booking as fallback");
+        return bookings[0];
     }
-}
 
-// Helper function to show messages
-function showMessage(message, type) {
-    const messageDiv = document.getElementById('refresh-message');
-    if (!messageDiv) return;
-    
-    messageDiv.innerHTML = `
-        <div class="alert alert-${type}">
-            <i class="fas ${getStatusIcon(type)}"></i> ${message}
-        </div>
-    `;
-    messageDiv.style.display = 'block';
-}
+    // Auto-refresh logic
+    function startAutoRefresh(carId) {
+        const refreshInterval = 10000; // 10 seconds
+        let refreshCount = 0;
+        const maxRefreshes = 30; // Stop after 5 minutes (30 * 10 seconds)
 
-function getStatusIcon(type) {
-    const icons = {
-        'info': 'fa-info-circle',
-        'success': 'fa-check-circle',
-        'warning': 'fa-exclamation-circle',
-        'danger': 'fa-times-circle'
-    };
-    return icons[type] || 'fa-info-circle';
-}
+        // Get current URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const startDate = urlParams.get('start_date');
+        const endDate = urlParams.get('end_date');
+
+        const refreshTimer = setInterval(async () => {
+            try {
+                refreshCount++;
+                console.log(`Checking booking status (attempt ${refreshCount})`);
+                
+                const userId = localStorage.getItem('userID');
+                // Fetch bookings with date parameters
+                const bookings = await fetchUserBookings(userId, startDate, endDate);
+                
+                // Find the relevant booking based on car_id and dates
+                let booking;
+                if (startDate && endDate) {
+                    booking = bookings.find(b => 
+                        b?.car_id == carId && 
+                        b?.start_date == startDate && 
+                        b?.end_date == endDate
+                    );
+                }
+                
+                // If no exact date match, find any booking for this car
+                if (!booking) {
+                    booking = bookings.find(b => b?.car_id == carId);
+                }
+                
+                if (!booking) {
+                    console.warn("Booking not found - stopping refresh");
+                    clearInterval(refreshTimer);
+                    return;
+                }
+                
+                const currentStatus = booking.status.toLowerCase();
+                
+                if (currentStatus !== 'pending') {
+                    // Status changed - refresh the page to show new status
+                    console.log(`Status changed to ${currentStatus} - reloading`);
+                    clearInterval(refreshTimer);
+                    
+                    // Construct URL with all necessary parameters
+                    let newUrl = `userbookings.html?booking_status=${currentStatus}&car_id=${carId}`;
+                    if (startDate) newUrl += `&start_date=${startDate}`;
+                    if (endDate) newUrl += `&end_date=${endDate}`;
+                    
+                    window.location.href = newUrl;
+                    return;
+                }
+                
+                if (refreshCount >= maxRefreshes) {
+                    console.log("Max refresh attempts reached - stopping");
+                    clearInterval(refreshTimer);
+                    showMessage("Owner is taking longer than expected to respond. We'll notify you when they reply.", "info");
+                    return;
+                }
+                
+                // Optional: Update the UI without full page refresh
+                updateStatusUI(booking.status);
+                
+            } catch (error) {
+                console.error("Auto-refresh error:", error);
+                clearInterval(refreshTimer);
+            }
+        }, refreshInterval);
+
+        // Show loading indicator
+        showMessage("Checking booking status...", "info");
+    }
+
+    // Update UI without full refresh (optional)
+    function updateStatusUI(status) {
+        const statusElement = document.getElementById('current-status');
+        if (statusElement) {
+            statusElement.textContent = status;
+            statusElement.className = `status-badge ${status.toLowerCase()}`;
+        }
+    }
+
+    // Helper function to show messages
+    function showMessage(message, type) {
+        const messageDiv = document.getElementById('refresh-message');
+        if (!messageDiv) return;
+        
+        messageDiv.innerHTML = `
+            <div class="alert alert-${type}">
+                <i class="fas ${getStatusIcon(type)}"></i> ${message}
+            </div>
+        `;
+        messageDiv.style.display = 'block';
+    }
+
+    function getStatusIcon(type) {
+        const icons = {
+            'info': 'fa-info-circle',
+            'success': 'fa-check-circle',
+            'warning': 'fa-exclamation-circle',
+            'danger': 'fa-times-circle'
+        };
+        return icons[type] || 'fa-info-circle';
+    }
     // Fetch user bookings from backend
-    async function fetchUserBookings(userId) {
+    async function fetchUserBookings(userId, startDate = null, endDate = null) {
         try {
-            const response = await fetch(`http://localhost:3000/user-bookings?user_id=${userId}`);
+            console.log("Fetching bookings with params:", {
+                userId,
+                startDate,
+                endDate
+            });
+
+            // Construct the URL with optional date parameters
+            let url = `http://localhost:3000/user-bookings?user_id=${userId}`;
+            if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+            if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+            
+            console.log("Request URL:", url);
+            
+            const response = await fetch(url);
+            console.log("Response status:", response.status);
             
             if (!response.ok) {
                 throw new Error(`Failed to fetch bookings: ${response.status}`);
             }
 
             const data = await response.json();
+            console.log("Response data:", data);
             
             if (!data?.success) {
                 throw new Error(data?.message || "Invalid data received from server");
@@ -322,51 +484,56 @@ function getStatusIcon(type) {
 
     // Display status message based on URL parameter
     // Updated displayStatusMessage function
-function displayStatusMessage(status, bookingStatus = null) {
-    try {
-        const statusMessage = document.getElementById('status-message');
-        
-        if (!statusMessage) return;
-        
-        // Use bookingStatus from data if available, otherwise use URL parameter
-        const actualStatus = bookingStatus || status;
-        if (!actualStatus) return;
-        
-        const statusConfig = {
-            pending: {
-                class: 'alert-info',
-                icon: 'fa-clock',
-                text: 'Your booking request is pending owner approval.'
-            },
-            confirmed: {
-                class: 'alert-success',
-                icon: 'fa-check-circle',
-                text: 'Owner has confirmed your booking!'
-            },
-            rejected: {
-                class: 'alert-danger',
-                icon: 'fa-times-circle',
-                text: 'Owner declined your booking request.'
-            }
-        };
+    function displayStatusMessage(status, bookingStatus = null) {
+        try {
+            const statusMessage = document.getElementById('status-message');
+            
+            if (!statusMessage) return;
+            
+            // Use bookingStatus from data if available, otherwise use URL parameter
+            const actualStatus = bookingStatus || status;
+            if (!actualStatus) return;
+            
+            const statusConfig = {
+                pending: {
+                    class: 'alert-info',
+                    icon: 'fa-clock',
+                    text: 'Your booking request is pending owner approval.'
+                },
+                confirmed: {
+                    class: 'alert-success',
+                    icon: 'fa-check-circle',
+                    text: 'Owner has confirmed your booking!'
+                },
+                rejected: {
+                    class: 'alert-danger',
+                    icon: 'fa-times-circle',
+                    text: 'Owner declined your booking request.'
+                }
+            };
 
-        if (statusConfig[actualStatus.toLowerCase()]) {
-            const config = statusConfig[actualStatus.toLowerCase()];
-            statusMessage.innerHTML = `
-                <div class="alert ${config.class}">
-                    <i class="fas ${config.icon}"></i> ${config.text}
-                </div>
-            `;
-            statusMessage.style.display = 'block';
+            if (statusConfig[actualStatus.toLowerCase()]) {
+                const config = statusConfig[actualStatus.toLowerCase()];
+                statusMessage.innerHTML = `
+                    <div class="alert ${config.class}">
+                        <i class="fas ${config.icon}"></i> ${config.text}
+                    </div>
+                `;
+                statusMessage.style.display = 'block';
+            }
+        } catch (error) {
+            console.error("Error displaying status message:", error);
         }
-    } catch (error) {
-        console.error("Error displaying status message:", error);
     }
-}
 
     // Display booking details with improved error handling
     function displayBookingDetails(bookings, urlCarId = null) {
         try {
+            console.log("Displaying booking details with params:", {
+                bookingsCount: bookings?.length,
+                urlCarId
+            });
+            
             const bookingDetails = document.getElementById('booking-details');
             if (!bookingDetails) {
                 throw new Error("Booking details container not found");
@@ -374,6 +541,7 @@ function displayStatusMessage(status, bookingStatus = null) {
 
             // Validate bookings data
             if (!bookings || !Array.isArray(bookings) || bookings.length === 0) {
+                console.log("No valid bookings data found");
                 bookingDetails.innerHTML = `
                     <div class="alert alert-warning">
                         No bookings found.
@@ -386,7 +554,7 @@ function displayStatusMessage(status, bookingStatus = null) {
             let relevantBooking;
             
             if (urlCarId) {
-                // Try to find booking matching the URL car_id
+                console.log("Looking for booking with car_id:", urlCarId);
                 relevantBooking = bookings.find(b => b?.car_id == urlCarId);
                 
                 if (!relevantBooking) {
@@ -396,8 +564,11 @@ function displayStatusMessage(status, bookingStatus = null) {
 
             // Fallback to first booking if no match found
             if (!relevantBooking) {
+                console.log("Using first booking as fallback");
                 relevantBooking = bookings[0];
             }
+
+            console.log("Selected booking:", relevantBooking);
 
             // Validate the booking object
             if (!relevantBooking || typeof relevantBooking !== 'object') {
@@ -411,9 +582,20 @@ function displayStatusMessage(status, bookingStatus = null) {
             const pricePerDay = relevantBooking.price_per_day || 0;
             
             // Format dates safely
+            console.log("Formatting dates...");
             const startDate = formatDate(relevantBooking.start_date);
             const endDate = formatDate(relevantBooking.end_date);
             const totalPrice = calculateTotalPrice(relevantBooking);
+
+            console.log("Formatted booking details:", {
+                carName,
+                model,
+                status,
+                pricePerDay,
+                startDate,
+                endDate,
+                totalPrice
+            });
 
             // Render the booking card
             bookingDetails.innerHTML = `
@@ -446,13 +628,23 @@ function displayStatusMessage(status, bookingStatus = null) {
     // Helper function to format dates with validation
     function formatDate(dateString) {
         try {
-            if (!dateString) return 'N/A';
+            console.log("Formatting date:", dateString);
+            
+            if (!dateString) {
+                console.warn("No date string provided");
+                return 'N/A';
+            }
             
             const date = new Date(dateString);
-            if (isNaN(date.getTime())) return 'Invalid Date';
+            if (isNaN(date.getTime())) {
+                console.error("Invalid date:", dateString);
+                return 'Invalid Date';
+            }
             
             const options = { year: 'numeric', month: 'short', day: 'numeric' };
-            return date.toLocaleDateString('en-US', options);
+            const formattedDate = date.toLocaleDateString('en-US', options);
+            console.log("Formatted date:", formattedDate);
+            return formattedDate;
         } catch (error) {
             console.error("Error formatting date:", error);
             return 'N/A';
@@ -462,7 +654,10 @@ function displayStatusMessage(status, bookingStatus = null) {
     // Helper function to calculate total price with validation
     function calculateTotalPrice(booking) {
         try {
+            console.log("Calculating total price for booking:", booking);
+            
             if (!booking?.start_date || !booking?.end_date || !booking.price_per_day) {
+                console.warn("Missing required booking data");
                 return 'N/A';
             }
             
@@ -470,6 +665,7 @@ function displayStatusMessage(status, bookingStatus = null) {
             const end = new Date(booking.end_date);
             
             if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                console.error("Invalid dates in booking");
                 return 'Invalid Date';
             }
             
@@ -477,9 +673,14 @@ function displayStatusMessage(status, bookingStatus = null) {
             const timeDiff = end - start;
             const days = Math.ceil(timeDiff / (1000 * 60 * 60 * 24)) + 1;
             
-            if (days <= 0) return 'N/A';
+            if (days <= 0) {
+                console.warn("Invalid day calculation:", days);
+                return 'N/A';
+            }
             
-            return days * booking.price_per_day;
+            const totalPrice = days * booking.price_per_day;
+            console.log("Calculated total price:", totalPrice);
+            return totalPrice;
         } catch (error) {
             console.error("Error calculating price:", error);
             return 'N/A';
