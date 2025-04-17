@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickRide - My Bookings</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .trip-id {
+            font-weight: bold;
+            color: #094e5b;
+        }
+        
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+
+        h1 {
+            color: #094e5b;
+            font-size: 28px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background-color: #bb2d3b;
+        }
+
+        .booking-list {
+            margin-top: 20px;
+        }
+
+        .booking-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+        }
+
+        .booking-item:hover {
+            transform: translateY(-3px);
+        }
+
+        .booking-item h3 {
+            color: #094e5b;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .booking-status {
+            font-size: 14px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .status-pending {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .status-confirmed {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-completed {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status-late {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .booking-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .detail-group {
+            margin-bottom: 10px;
+        }
+
+        .detail-group p:first-child {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .penalty-amount {
+            color: #dc3545;
+            font-weight: bold;
+        }
+
+        .total-amount {
+            font-size: 18px;
+            font-weight: bold;
+            color: #094e5b;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #ddd;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            color: #094e5b;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .nav-links a {
+            color: #094e5b;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        
+        .nav-links a:hover {
+            background-color: #e1e5eb;
+        }
+        
+        .nav-links a.active {
+            background-color: #094e5b;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .booking-details {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>QuickRide - My Bookings</h1>
+                <p id="userNameDisplay"></p>
+            </div>
+            <div class="nav-links">
+                <a href="usermainpage.html">Home</a>
+                <a href="user-carbooking.html" class="active">My Bookings</a>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </header>
+
+        <div id="bookingList" class="booking-list">
+            <!-- Bookings will be loaded here dynamically -->
+        </div>
+    </div>
+
+    <script>
+        // Global constants
+        const API_BASE_URL = 'http://localhost:3000';
+        
+        // DOM Elements
+        const elements = {
+            bookingList: document.getElementById('bookingList'),
+            userNameDisplay: document.getElementById('userNameDisplay'),
+            logoutBtn: document.getElementById('logoutBtn')
+        };
+
+        // Function to check if user is logged in
+        function checkLogin() {
+            const userID = localStorage.getItem('userID');
+            const userName = localStorage.getItem('user_Name');
+        
+            if (!userID) {
+                alert('Please login first');
+                window.location.href = 'userloginpage.html';
+                return null;
+            }
+            
+            if (userName) {
+                elements.userNameDisplay.textContent = `Welcome, ${userName}`;
+            }
+            
+            return userID;
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        }
+
+        // Calculate total amount including penalty
+        function calculateTotalAmount(startDate, endDate, pricePerDay, penalty = 0) {
+            const start = new Date(startDate);
+            const end = new Date(endDate || endDate); // Handle null end dates
+            const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1);
+            const rentalAmount = diffDays * Number(pricePerDay);
+            const total = rentalAmount + Number(penalty || 0);
+            
+            return {
+                days: diffDays,
+                rentalAmount: rentalAmount,
+                totalAmount: total
+            };
+        }
+
+        // Get status style class
+        function getStatusClass(status, isLate) {
+            if (isLate) return 'status-late';
+            if (status === 'Confirmed') return 'status-confirmed';
+            if (status === 'Completed') return 'status-completed';
+            return 'status-pending';
+        }
+
+        // Load user's booking history
+        async function loadBookingHistory() {
+
+            const userID = checkLogin();
+            if (!userID) return;
+        
+            try {
+                elements.bookingList.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+                const response = await fetch(`http://localhost:3000/user-bookings-v2?user_id=${userID}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                console.log("Response status:", response.status);
+                const data = await response.json();
+                console.log("Received bookings data:", data.bookings);
+                if (!data.success) {
+                    throw new Error(data.message || 'Failed to fetch bookings');
+                }
+                
+                renderBookingList(data.bookings);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showErrorState(error.message);
+            }
+        }
+
+        // Render booking list
+        function renderBookingList(bookings) {
+            if (!bookings || bookings.length === 0) {
+                elements.bookingList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-calendar-times"></i>
+                        <h3>No Bookings Found</h3>
+                        <p>You haven't made any bookings yet.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            elements.bookingList.innerHTML = bookings.map(booking => {
+                const penaltyValue = booking.penalty !== null ? Number(booking.penalty) : 0;
+                const isLate = booking.actual_return_date && 
+                              new Date(booking.actual_return_date) > new Date(booking.end_date);
+                
+                const { days, rentalAmount, totalAmount } = calculateTotalAmount(
+                    booking.start_date,
+                    booking.actual_return_date || booking.end_date,
+                    booking.price_per_day,
+                    penaltyValue
+                );
+                
+                const statusClass = getStatusClass(booking.status, isLate);
+                let statusText = booking.status;
+                if (isLate) statusText = 'Late Return';
+                if (booking.actual_return_date) statusText = 'Completed';
+                
+                return `
+                    <div class="booking-item">
+                        <div class="booking-header">
+                            <span class="trip-id">Booking #${booking.trip_id}</span>
+                            <span class="booking-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <h3>${booking.car_name} ${booking.model}</h3>
+                        
+                        <div class="booking-details">
+                            <div class="detail-group">
+                                <p>Pickup Date</p>
+                                <p>${formatDate(booking.start_date)}</p>
+                            </div>
+                            <div class="detail-group">
+                                <p>Return Date</p>
+                                <p>${formatDate(booking.end_date)}</p>
+                            </div>
+                            ${booking.actual_return_date ? `
+                            <div class="detail-group">
+                                <p>Actual Return</p>
+                                <p>${formatDate(booking.actual_return_date)}</p>
+                            </div>
+                            ` : ''}
+                            <div class="detail-group">
+                                <p>Daily Rate</p>
+                                <p>₹${Number(booking.price_per_day).toFixed(2)}</p>
+                            </div>
+                            ${penaltyValue > 0 ? `
+                            <div class="detail-group">
+                                <p>Late Penalty</p>
+                                <p class="penalty-amount">₹${penaltyValue.toFixed(2)}</p>
+                            </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="total-amount">
+                            Total Amount: ₹${totalAmount.toFixed(2)}
+                            ${days > 0 ? `(${days} days × ₹${Number(booking.price_per_day).toFixed(2)}${penaltyValue > 0 ? ` + ₹${penaltyValue.toFixed(2)} penalty` : ''})` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+                function showErrorState(message) {
+            elements.bookingList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Error Loading Bookings</h3>
+                    <p>${message}</p>
+                    <button onclick="loadBookingHistory()" style="margin-top: 15px; padding: 8px 16px; background: #094e5b; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem('userID');
+            localStorage.removeItem('user_Name');
+            window.location.href = 'userloginpage.html';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkLogin()) {
+                loadBookingHistory();
+            }
+            
+            elements.logoutBtn.addEventListener('click', logout);
+        });
+    </script>
+</body>
+</html>

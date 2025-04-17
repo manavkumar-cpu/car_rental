@@ -19,10 +19,7 @@
     <nav class="navbar">
         <h1>QuickRide</h1>
         <div class="nav-links">
-            <a href="#">Home</a>
-            <a href="#">Cars</a>
-            <a href="#">Bookings</a>
-            <a href="#">Contact</a>
+            <a href="/Users/manavkumar/Desktop/project/user-carbooking.html">Bookings</a>
         </div>
         <i class="fas fa-user-circle user-icon"></i>
     </nav>
@@ -87,18 +84,16 @@
             // ✅ Save dates in localStorage when changed
             fromDateInput.addEventListener("change", () => {
                 localStorage.setItem("fromDate", fromDateInput.value);
-                // Also store in the format userbookings.html expects
                 localStorage.setItem("booking_start_date", fromDateInput.value);
             });
         
             toDateInput.addEventListener("change", () => {
                 localStorage.setItem("toDate", toDateInput.value);
-                // Also store in the format userbookings.html expects
                 localStorage.setItem("booking_end_date", toDateInput.value);
             });
         
-             // Search button click handler - ensure dates are properly encoded
-             searchButton.addEventListener("click", () => {
+            // Search button click handler
+            searchButton.addEventListener("click", () => {
                 const location = pickupSelect.value;
                 const fromDate = fromDateInput.value;
                 const toDate = toDateInput.value;
@@ -108,37 +103,46 @@
                     return;
                 }
                 
-                // Store dates in the format userbookings.html expects
+                // Get current date (without time)
+                const currentDate = new Date();
+                currentDate.setHours(0, 0, 0, 0);
+                
+                // Convert input dates to Date objects (without time)
+                const fromDateObj = new Date(fromDate);
+                fromDateObj.setHours(0, 0, 0, 0);
+                
+                const toDateObj = new Date(toDate);
+                toDateObj.setHours(0, 0, 0, 0);
+                
+                // Validate dates are not in the past
+                if (fromDateObj < currentDate || toDateObj < currentDate) {
+                    alert("Invalid dates! Please select dates from today onwards.");
+                    return;
+                }
+                
+                // Allow same-day rentals (check date only, ignore time)
+                if (toDateObj < fromDateObj) {
+                    alert("Invalid date range! End date must be on or after start date.");
+                    return;
+                }
+                
+                // Store dates
                 localStorage.setItem("booking_start_date", fromDate);
                 localStorage.setItem("booking_end_date", toDate);
-                
-                // Also store as a single object for easier retrieval
                 localStorage.setItem("mainpage_dates", JSON.stringify({
                     start_date: fromDate,
                     end_date: toDate
                 }));
                 
-                // Convert dates to ISO strings for consistency
+                // Convert dates to ISO strings for URL
                 const fromISO = new Date(fromDate).toISOString();
                 const toISO = new Date(toDate).toISOString();
-                
-                console.log("Stored dates:", {
-                    fromDate,
-                    toDate,
-                    fromISO,
-                    toISO,
-                    localStorage: {
-                        booking_start_date: localStorage.getItem("booking_start_date"),
-                        booking_end_date: localStorage.getItem("booking_end_date"),
-                        mainpage_dates: localStorage.getItem("mainpage_dates")
-                    }
-                });
                 
                 window.location.href = `usercarspage.html?location=${encodeURIComponent(location)}&from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`;
             });
         
             try {
-                // ✅ Fetch cities and populate dropdown
+                // Fetch cities
                 const response = await fetch("http://localhost:3000/get-cities");
                 const data = await response.json();
         
@@ -153,10 +157,7 @@
             }
         });
         
-        // ✅ Function to populate the dropdown
         function populateCityDropdown(selectElement, cities) {
-            console.log("✅ Populating dropdown with cities:", cities);
-        
             cities.forEach(city => {
                 const option = document.createElement("option");
                 option.value = city;
@@ -165,7 +166,6 @@
             });
         }
         
-        // ✅ Make function global if needed elsewhere
         window.populateCityDropdown = populateCityDropdown;
     </script>
 </body>

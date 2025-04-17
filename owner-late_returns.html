@@ -269,7 +269,6 @@
             <div class="penalty-details">
                 <p>The car has been returned successfully.</p>
                 <p>Days late: <span id="modalDaysLate">0</span></p>
-                <p>Daily penalty rate: 1.5x the daily price</p>
                 <p>Total penalty: <span class="penalty-amount" id="modalTotalPenalty">₹0</span></p>
             </div>
             <button id="confirmPenaltyBtn" class="returned-btn">Confirm</button>
@@ -305,9 +304,10 @@
         function calculateLateDetails(endDate, pricePerDay) {
             const now = new Date();
             const end = new Date(endDate);
+            now.setHours(0, 0, 0, 0);
+            end.setHours(0, 0, 0, 0);
             const diffTime = now - end;
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-            
             if (diffDays <= 0) return { daysLate: 0, penalty: 0 };
             
             const penaltyRate = 1.5; // 1.5x the daily price
@@ -342,16 +342,14 @@
 
         // Mark car as returned
         async function markAsReturned(tripId, penalty) {
+            const carItem = document.querySelector(`.return-item[data-trip-id="${tripId}"]`);
+            const modal = document.getElementById("penaltyModal");
+        
             try {
-                // Get the car item element before making the request
-                const carItem = document.querySelector(`.return-item[data-trip-id="${tripId}"]`);
-                
-                // Visual feedback - start fading immediately
-                if (carItem) {
-                    carItem.style.transition = "all 0.5s ease";
-                    carItem.style.opacity = "0.5";
-                    carItem.style.transform = "translateX(-30px)";
-                }
+                // Visual feedback
+                carItem.style.transition = "all 0.5s ease";
+                carItem.style.opacity = "0.5";
+                carItem.style.transform = "translateX(-30px)";
         
                 const response = await fetch('http://localhost:3000/mark-returned', {
                     method: 'POST',
@@ -363,50 +361,41 @@
                     })
                 });
         
+                const result = await response.json();
+        
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || "Failed to mark as returned");
+                    throw new Error(result.message || "Failed to mark as returned");
                 }
         
-                const result = await response.json();
-                
-                // Close modal first
-                document.getElementById("penaltyModal").style.display = "none";
-                
-                // Complete the fade-out animation
-                if (carItem) {
-                    carItem.style.opacity = "0";
-                    carItem.style.transform = "translateX(-100px)";
-                    
-                    // Remove after animation completes
-                    carItem.addEventListener('transitionend', () => {
-                        carItem.remove();
-                        
-                        // Check if list is now empty
-                        const returnsList = document.getElementById("returnsList");
-                        if (returnsList.children.length === 0) {
-                            returnsList.innerHTML = '<div class="empty-state">No late returns found</div>';
-                        }
-                    });
-                }
-                
-                showToast(result.message || "Car return recorded successfully!");
-                
+                // Complete the animation
+                carItem.style.opacity = "0";
+                carItem.style.transform = "translateX(-100px)";
+        
+                carItem.addEventListener('transitionend', () => {
+                    carItem.remove();
+                    showToast(result.message);
+        
+                    // Check if list is empty now
+                    if (document.querySelectorAll('.return-item').length === 0) {
+                        document.getElementById("returnsList").innerHTML =
+                            '<div class="empty-state">All cars returned on time!</div>';
+                    }
+                });
+        
+                // Hide the modal
+                modal.classList.add('hiding');
+                setTimeout(() => {
+                    modal.style.display = "none";
+                }, 300); // Match this with the CSS transition duration
+        
             } catch (error) {
                 console.error("Error:", error);
-                
-                // Reset the item if error occurred
-                const carItem = document.querySelector(`.return-item[data-trip-id="${tripId}"]`);
-                if (carItem) {
-                    carItem.style.opacity = "1";
-                    carItem.style.transform = "none";
-                }
-                
+                // Reset animation if failed
+                carItem.style.opacity = "1";
+                carItem.style.transform = "none";
                 alert(`Error: ${error.message}`);
             }
-        }
-        
-          
+        }       
           // Add this helper function for better user feedback
           function showToast(message) {
             const toast = document.createElement("div");

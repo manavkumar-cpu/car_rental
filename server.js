@@ -692,38 +692,173 @@ app.get('/owner-requests', async (req, res) => {
     });
   }
 });
+/**
+ * @route GET /cars-due-today
+ * @description Get all cars with bookings ending today that haven't been marked as returned
+ * @param {string} ownerId - Owner ID from query params
+ */
+app.get('/cars-due-today', async (req, res) => {
+  const { ownerId } = req.query;
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  console.log("Query params:", { ownerId, today });
 
+  if (!ownerId) {
+      return res.status(400).json({
+          success: false,
+          message: "Owner ID is required"
+      });
+  }
+
+  try {
+      const [bookings] = await pool.query(`
+          SELECT 
+              t.trip_id,
+              t.userID,
+              t.car_id,
+              DATE_FORMAT(t.start_date, '%Y-%m-%d %H:%i:%s') AS start_date,
+              DATE_FORMAT(t.end_date, '%Y-%m-%d %H:%i:%s') AS end_date,
+              c.car_name,
+              c.model,
+              c.price_per_day,
+              u.name AS user_name,
+              u.phone AS user_phone
+          FROM trips t
+          JOIN cars c ON t.car_id = c.cars_id
+          JOIN users u ON t.userID = u.userID
+          JOIN trip_returns tr ON t.trip_id = tr.trip_id
+          WHERE 
+              c.ownerID = ? 
+              AND DATE(t.end_date) = ?
+              AND tr.actual_return_date IS NULL
+      `, [ownerId, today]);
+
+      console.log("Database results:", bookings);
+
+      res.status(200).json({
+          success: true,
+          bookings,
+          currentDate: today
+      });
+  } catch (error) {
+      console.error("Database Error:", error);
+      res.status(500).json({
+          success: false,
+          message: "Failed to fetch due cars",
+          error: error.message
+      });
+  }
+});
+
+/**
+ * @route POST /mark-as-returned
+ * @description Mark a car as returned by updating actual_return_date
+ * @param {number} trip_id - Trip ID from request body
+ * @param {number} ownerId - Owner ID for validation
+ */
+app.post('/mark-as-returned', async (req, res) => {
+  const { trip_id, ownerId } = req.body;
+
+  // Input validation
+  if (!trip_id || !ownerId) {
+    return res.status(400).json({
+      success: false,
+      message: "Trip ID and Owner ID are required"
+    });
+  }
+
+  try {
+    // 1. Verify ownership
+    const [ownershipCheck] = await pool.query(`
+      SELECT 1 FROM trips t
+      JOIN cars c ON t.car_id = c.cars_id
+      WHERE t.trip_id = ? AND c.ownerID = ?
+    `, [trip_id, ownerId]);
+
+    if (ownershipCheck.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized - You don't own this car"
+      });
+    }
+
+    // 2. Get end_date for the trip
+    const [tripData] = await pool.query(`
+      SELECT end_date FROM trips WHERE trip_id = ?
+    `, [trip_id]);
+
+    // 3. Update return status
+    const [result] = await pool.query(`
+      UPDATE trip_returns 
+      SET actual_return_date = ?
+      WHERE trip_id = ?
+    `, [tripData[0].end_date, trip_id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Trip not found or already returned"
+      });
+    }
+
+    // // 4. (Optional) Update car availability if needed
+    // await pool.query(`
+    //   UPDATE cars c
+    //   JOIN trips t ON c.cars_id = t.car_id
+    //   SET c.available = 1
+    //   WHERE t.trip_id = ?
+    // `, [trip_id]);
+
+    res.status(200).json({
+      success: true,
+      message: "Car successfully marked as returned",
+      returned_at: tripData[0].end_date
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update return status",
+      error: error.message
+    });
+  }
+});
 // Add this to your server.js file
 // Add this to your server.js
 app.post('/mark-returned', async (req, res) => {
   const { tripId, penalty, actualReturnDate } = req.body;
-  
+  console.log("🔹 Request received:", { tripId, penalty, actualReturnDate });
+
   try {
+    console.log("🔹 Starting transaction...");
     await pool.query('START TRANSACTION');
-    
-    // 1. Update trip_returns
-    await pool.query(
+
+    console.log("🔹 Updating trip_returns...");
+    const [returnResult] = await pool.query(
       `INSERT INTO trip_returns (trip_id, actual_return_date)
        VALUES (?, ?)
        ON DUPLICATE KEY UPDATE actual_return_date = VALUES(actual_return_date)`,
       [tripId, actualReturnDate]
     );
+    console.log("✅ trip_returns updated:", returnResult);
 
-    // 2. Update late_fees
-    await pool.query(
+    console.log("🔹 Updating late_fees...");
+    const [penaltyResult] = await pool.query(
       `INSERT INTO late_fees (trip_id, penalty)
        VALUES (?, ?)
        ON DUPLICATE KEY UPDATE penalty = VALUES(penalty)`,
       [tripId, penalty]
     );
+    console.log("✅ late_fees updated:", penaltyResult);
 
+    console.log("🔹 Committing transaction...");
     await pool.query('COMMIT');
+    console.log("✅ Transaction committed successfully");
+
     res.json({ success: true, message: "Return recorded successfully" });
-    
   } catch (error) {
+    console.error("❌ Database error during transaction:", error);
     await pool.query('ROLLBACK');
-    console.error("Database error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: "Database operation failed",
       error: error.message
@@ -745,25 +880,25 @@ app.get("/owner-late-returns", async (req, res) => {
   try {
       const [returns] = await pool.query(
           `SELECT 
-              t.trip_id,
-              tc.userID, 
-              tc.car_id, 
-              tc.end_date,
-              c.car_name, 
-              c.model,
-              c.price_per_day,
-              u.name as user_name,
-              u.phone as user_phone
-          FROM trips t
-          JOIN trip_confirmations tc ON t.userID = tc.userID AND t.car_id = tc.car_id AND t.start_date = tc.start_date
-          JOIN cars c ON tc.car_id = c.cars_id
-          JOIN users u ON tc.userID = u.userID
-          LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
-          WHERE c.ownerID = ? 
-          AND tc.status = 'Confirmed'
-          AND tc.end_date < NOW()
-          AND (tr.actual_return_date IS NULL OR tr.actual_return_date > tc.end_date)
-          ORDER BY tc.end_date DESC`,
+          t.trip_id,
+          tc.userID, 
+          tc.car_id, 
+          tc.end_date,
+          c.car_name, 
+          c.model,
+          c.price_per_day,
+          u.name as user_name,
+          u.phone as user_phone
+      FROM trips t
+      JOIN trip_confirmations tc ON t.userID = tc.userID AND t.car_id = tc.car_id AND t.start_date = tc.start_date
+      JOIN cars c ON tc.car_id = c.cars_id
+      JOIN users u ON tc.userID = u.userID
+      LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+      WHERE c.ownerID = ? 
+      AND tc.status = 'Confirmed'
+      AND DATE(tc.end_date) < CURDATE() -- Compare only the date part
+      AND tr.actual_return_date IS NULL
+      ORDER BY tc.end_date DESC`,
           [ownerId]
       );
 
@@ -776,6 +911,65 @@ app.get("/owner-late-returns", async (req, res) => {
       res.status(500).json({
           success: false,
           message: "Failed to fetch late returns",
+          error: error.message
+      });
+  }
+});
+// User Bookings Endpoint
+// GET User Bookings with Trip Details
+app.get('/user-bookings-v2', async (req, res) => {
+  const userId = req.query.user_id;
+  if (!userId) {
+      return res.status(400).json({
+          success: false,
+          message: 'User ID is required'
+      });
+  }
+
+  try {
+      const [bookings] = await pool.execute(`
+          SELECT 
+              t.trip_id,
+              t.userID,
+              t.car_id,
+              DATE_FORMAT(t.start_date, '%Y-%m-%d') AS start_date,
+              DATE_FORMAT(t.end_date, '%Y-%m-%d') AS end_date,
+              DATE_FORMAT(tr.actual_return_date, '%Y-%m-%d') AS actual_return_date,
+              c.car_name,
+              c.model,
+              c.price_per_day,
+              COALESCE(lf.penalty, 0.00) AS penalty,
+              CASE 
+                  WHEN tr.actual_return_date IS NULL THEN 'Confirmed'
+                  WHEN tr.actual_return_date > t.end_date THEN 'Late Return'
+                  ELSE 'Completed'
+              END AS status
+          FROM trips t
+          JOIN cars c ON t.car_id = c.cars_id
+          LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+          LEFT JOIN late_fees lf ON t.trip_id = lf.trip_id
+          WHERE t.userID = ?
+          ORDER BY t.trip_id DESC
+      `, [userId]);
+
+      res.json({
+          success: true,
+          bookings: bookings.map(booking => ({
+              ...booking,
+              // Convert string dates to Date objects for frontend
+              start_date: new Date(booking.start_date),
+              end_date: new Date(booking.end_date),
+              actual_return_date: booking.actual_return_date 
+                  ? new Date(booking.actual_return_date) 
+                  : null
+          }))
+      });
+
+  } catch (error) {
+      console.error('Database error:', error);
+      res.status(500).json({
+          success: false,
+          message: 'Failed to fetch bookings',
           error: error.message
       });
   }
