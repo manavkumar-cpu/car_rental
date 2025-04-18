@@ -172,8 +172,9 @@ app.post("/login/owner", async (req, res) => {
 
 // Get available cars by location
 app.get("/cars/available", async (req, res) => {
-  const { location } = req.query;
+  const { location, startDate, endDate } = req.query;
   
+  // Validate required parameters
   if (!location) {
     return res.status(400).json({ 
       success: false,
@@ -181,19 +182,41 @@ app.get("/cars/available", async (req, res) => {
     });
   }
 
+  if (!startDate || !endDate) {
+    return res.status(400).json({ 
+      success: false,
+      message: "Both startDate and endDate parameters are required" 
+    });
+  }
+
   try {
-    const [cars] = await pool.query(
+    const [availableCars] = await pool.query(
       `SELECT c.*, o.owner_name 
        FROM cars c
        JOIN owners o ON c.ownerID = o.ownerID
-       WHERE c.city = ?`,
-      [location]
+       WHERE c.city = ?
+       AND c.cars_id NOT IN (
+         SELECT tc.car_id 
+         FROM trip_confirmations tc
+         WHERE tc.status IN ('Pending', 'Confirmed')
+         AND (
+           (tc.start_date <= ? AND tc.end_date >= ?) OR  -- Existing booking overlaps with requested period
+           (tc.start_date <= ? AND tc.end_date >= ?) OR  -- Requested period overlaps with existing booking
+           (tc.start_date >= ? AND tc.end_date <= ?)     -- Existing booking is within requested period
+         )
+       )`,
+      [
+        location,
+        endDate, startDate,  // For first overlap condition
+        startDate, endDate,  // For second overlap condition
+        startDate, endDate   // For third condition
+      ]
     );
 
     res.status(200).json({
       success: true,
-      cars,
-      count: cars.length
+      cars: availableCars,
+      count: availableCars.length
     });
   } catch (error) {
     console.error("Database Error:", error);
@@ -800,13 +823,7 @@ app.post('/mark-as-returned', async (req, res) => {
       });
     }
 
-    // // 4. (Optional) Update car availability if needed
-    // await pool.query(`
-    //   UPDATE cars c
-    //   JOIN trips t ON c.cars_id = t.car_id
-    //   SET c.available = 1
-    //   WHERE t.trip_id = ?
-    // `, [trip_id]);
+  
 
     res.status(200).json({
       success: true,
@@ -972,6 +989,51 @@ app.get('/user-bookings-v2', async (req, res) => {
           message: 'Failed to fetch bookings',
           error: error.message
       });
+  }
+});
+
+// GET /owner-current-bookings
+app.post('/owner-current-bookings', async (req, res) => {
+  const { ownerId } = req.body;
+
+  if (!ownerId) {
+    return res.status(400).json({
+      success: false,
+      message: "Owner ID is required"
+    });
+  }
+
+  try {
+    const [bookings] = await pool.query(`
+      SELECT 
+        t.trip_id,
+        c.car_name,
+        c.model,
+        c.price_per_day,
+        c.city,
+        u.name AS user_name,
+        u.phone AS user_phone,
+        t.start_date,
+        t.end_date
+      FROM trips t
+      JOIN cars c ON t.car_id = c.cars_id
+      JOIN users u ON t.userID = u.userID
+      LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+      WHERE c.ownerID = ? AND tr.actual_return_date IS NULL
+      ORDER BY t.start_date ASC
+    `, [ownerId]);
+
+    res.status(200).json({
+      success: true,
+      bookings: bookings
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch current bookings",
+      error: error.message
+    });
   }
 });
 

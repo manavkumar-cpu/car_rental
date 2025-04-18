@@ -211,12 +211,25 @@
                 .slice(0, 19)
                 .replace('T', ' ');
         }
+    
         document.addEventListener("DOMContentLoaded", async () => {
             // Parse URL parameters
             const urlParams = new URLSearchParams(window.location.search);
             const location = urlParams.get('location');
             let fromDate = urlParams.get('from');
             let toDate = urlParams.get('to');
+            
+            // Validate required parameters
+            if (!location || !fromDate || !toDate) {
+                document.getElementById('carGrid').innerHTML = `
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Please provide location, from date, and to date parameters
+                        <a href="usermainpage.html" class="search-again">Search again</a>
+                    </div>
+                `;
+                return;
+            }
             
             // Convert dates to IST format for API call
             fromDate = toISTString(fromDate);
@@ -231,14 +244,12 @@
             `;
         
             try {
-
-                
                 // Fetch available cars with timeout
                 const controller = new AbortController();
                 const timeout = setTimeout(() => controller.abort(), 5000);
                 
                 const response = await fetch(
-                    `http://localhost:3000/cars/available?location=${encodeURIComponent(location)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`
+                    `http://localhost:3000/cars/available?location=${encodeURIComponent(location)}&startDate=${encodeURIComponent(fromDate)}&endDate=${encodeURIComponent(toDate)}`
                 );
                 clearTimeout(timeout);
         
@@ -278,8 +289,6 @@
             }
         });
         
-        
-
         function displayCars(cars, fromDate, toDate) {
             const carGrid = document.getElementById('carGrid');
             
@@ -297,7 +306,7 @@
             carGrid.innerHTML = cars.map(car => `
                 <div class="car-card">
                     <div class="car-image">
-                        <i class="fas fa-car"></i>
+                        ${car.image_url ? `<img src="${car.image_url}" alt="${car.car_name}">` : `<i class="fas fa-car"></i>`}
                     </div>
                     <div class="car-details">
                         <h3>${car.car_name} ${car.model}</h3>
@@ -314,12 +323,12 @@
             `).join('');
         }
         
-        function bookCar(carId, fromDate, toDate) {
+        function bookCar(cars_id, fromDate, toDate) {
             // Convert dates back to local format for display
             const localFrom = new Date(fromDate).toISOString();
             const localTo = new Date(toDate).toISOString();
             
-            window.location.href = `booking.html?carId=${carId}&from=${encodeURIComponent(localFrom)}&to=${encodeURIComponent(localTo)}`;
+            window.location.href = `booking.html?cars_id=${cars_id}&from=${encodeURIComponent(localFrom)}&to=${encodeURIComponent(localTo)}`;
         }
     </script>
 </body>

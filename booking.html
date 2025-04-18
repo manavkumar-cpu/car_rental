@@ -240,10 +240,10 @@
             try {
                 // Get URL parameters
                 const urlParams = new URLSearchParams(window.location.search);
-                const carId = urlParams.get('carId');
+                const carId = urlParams.get('cars_id');
                 const fromDate = urlParams.get('from');
                 const toDate = urlParams.get('to');
-                
+                console.log(`Car ID: ${carId}, From: ${fromDate}, To: ${toDate}`);
                 // Validate parameters
                 if (!carId || !fromDate || !toDate) {
                     throw new Error("Missing booking information - please start over");
