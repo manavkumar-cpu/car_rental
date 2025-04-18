@@ -12,6 +12,41 @@
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
+        /* Add to your existing styles */
+.booking-actions {
+    margin-top: 15px;
+    text-align: right;
+}
+
+.cancel-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.cancel-btn:hover {
+    background-color: #bb2d3b;
+}
+
+.status-rejected {
+    background-color: #6c757d;
+    color: white;
+}
+
+.rejected-booking {
+    opacity: 0.8;
+    border-left: 4px solid #6c757d;
+}
+
+.rejected-text {
+    color: #6c757d;
+    font-style: italic;
+}
         .booking-header {
             display: flex;
             justify-content: space-between;
@@ -75,7 +110,76 @@
         .booking-list {
             margin-top: 20px;
         }
-
+        .booking-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid #ddd;
+          }
+          
+          .booking-card.upcoming {
+            border-left-color: #17a2b8;
+          }
+          
+          .booking-card.active {
+            border-left-color: #28a745;
+          }
+          
+          .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+          }
+          
+          .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+          }
+          
+          .status-badge.upcoming {
+            background-color: #17a2b8;
+          }
+          
+          .status-badge.active {
+            background-color: #28a745;
+          }
+          
+          .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+          }
+          
+          .booking-actions {
+            margin-top: 15px;
+            text-align: right;
+          }
+          
+          .cancel-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+          }
+          
+          .cancel-btn:hover {
+            background-color: #c82333;
+          }
+          
+          .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+          }
         .booking-item {
             background: white;
             border-radius: 8px;
@@ -213,6 +317,7 @@
             <div class="nav-links">
                 <a href="usermainpage.html">Home</a>
                 <a href="user-carbooking.html" class="active">My Bookings</a>
+                <a href="user-bookinghistory.html">Booking History</a>
             </div>
             <button id="logoutBtn" class="logout-btn">Logout</button>
         </header>
@@ -232,7 +337,7 @@
             userNameDisplay: document.getElementById('userNameDisplay'),
             logoutBtn: document.getElementById('logoutBtn')
         };
-
+    
         // Function to check if user is logged in
         function checkLogin() {
             const userID = localStorage.getItem('userID');
@@ -250,17 +355,17 @@
             
             return userID;
         }
-
+    
         // Format date for display
         function formatDate(dateString) {
             const options = { year: 'numeric', month: 'short', day: 'numeric' };
             return new Date(dateString).toLocaleDateString('en-US', options);
         }
-
+    
         // Calculate total amount including penalty
         function calculateTotalAmount(startDate, endDate, pricePerDay, penalty = 0) {
             const start = new Date(startDate);
-            const end = new Date(endDate || endDate); // Handle null end dates
+            const end = new Date(endDate || endDate);
             const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1);
             const rentalAmount = diffDays * Number(pricePerDay);
             const total = rentalAmount + Number(penalty || 0);
@@ -271,32 +376,37 @@
                 totalAmount: total
             };
         }
-
+    
         // Get status style class
         function getStatusClass(status, isLate) {
             if (isLate) return 'status-late';
             if (status === 'Confirmed') return 'status-confirmed';
             if (status === 'Completed') return 'status-completed';
+            if (status === 'Rejected') return 'status-rejected';
+            if (status === 'Upcoming') return 'status-upcoming';
+            if (status === 'Active') return 'status-active';
             return 'status-pending';
         }
-
-        // Load user's booking history
-        async function loadBookingHistory() {
-
+    
+        // Check if booking can be cancelled
+        function canCancelBooking(startDate) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return new Date(startDate) > today;
+        }
+    
+        // Load user's active bookings
+        async function loadActiveBookings() {
             const userID = checkLogin();
             if (!userID) return;
         
             try {
                 elements.bookingList.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
-                const response = await fetch(`http://localhost:3000/user-bookings-v2?user_id=${userID}`);
+                
+                const response = await fetch(`${API_BASE_URL}/active-user-bookings?user_id=${userID}`);
+                const data = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                console.log("Response status:", response.status);
-                const data = await response.json();
-                console.log("Received bookings data:", data.bookings);
-                if (!data.success) {
                     throw new Error(data.message || 'Failed to fetch bookings');
                 }
                 
@@ -307,15 +417,15 @@
                 showErrorState(error.message);
             }
         }
-
+    
         // Render booking list
         function renderBookingList(bookings) {
             if (!bookings || bookings.length === 0) {
                 elements.bookingList.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-calendar-times"></i>
-                        <h3>No Bookings Found</h3>
-                        <p>You haven't made any bookings yet.</p>
+                        <h3>No Active Bookings</h3>
+                        <p>You don't have any active bookings right now.</p>
                     </div>
                 `;
                 return;
@@ -333,15 +443,16 @@
                     penaltyValue
                 );
                 
-                const statusClass = getStatusClass(booking.status, isLate);
-                let statusText = booking.status;
-                if (isLate) statusText = 'Late Return';
-                if (booking.actual_return_date) statusText = 'Completed';
+                const statusClass = getStatusClass(booking.booking_status, isLate);
+                let statusText = booking.booking_status;
                 
+                // Add cancel button only for upcoming bookings
+                const showCancelButton = booking.can_cancel;
+    
                 return `
-                    <div class="booking-item">
+                    <div class="booking-item ${statusClass}">
                         <div class="booking-header">
-                            <span class="trip-id">Booking #${booking.trip_id}</span>
+                            <span class="trip-id">${booking.trip_id ? `Booking #${booking.trip_id}` : 'Booking Request'}</span>
                             <span class="booking-status ${statusClass}">${statusText}</span>
                         </div>
                         <h3>${booking.car_name} ${booking.model}</h3>
@@ -374,37 +485,88 @@
                         </div>
                         
                         <div class="total-amount">
+                            ${booking.booking_status !== 'Rejected' ? `
                             Total Amount: ₹${totalAmount.toFixed(2)}
                             ${days > 0 ? `(${days} days × ₹${Number(booking.price_per_day).toFixed(2)}${penaltyValue > 0 ? ` + ₹${penaltyValue.toFixed(2)} penalty` : ''})` : ''}
+                            ` : '<p class="rejected-text">Booking was rejected</p>'}
                         </div>
+                        
+                        ${showCancelButton ? `
+                        <div class="booking-actions">
+                            <button class="cancel-btn" data-trip-id="${booking.trip_id}">
+                                Cancel Booking
+                            </button>
+                        </div>
+                        ` : ''}
                     </div>
                 `;
             }).join('');
+            
+            // Add event listeners to cancel buttons
+            document.querySelectorAll('.cancel-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    cancelBooking(e.target.getAttribute('data-trip-id'));
+                });
+            });
         }
-                function showErrorState(message) {
+    
+        // Cancel booking function
+        async function cancelBooking(tripId) {
+            if (!confirm('Are you sure you want to cancel this booking?')) return;
+            
+            const userID = localStorage.getItem('userID');
+            if (!userID) return;
+    
+            try {
+                const response = await fetch(`${API_BASE_URL}/cancel-booking`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        trip_id: tripId,
+                        user_id: userID
+                    })
+                });
+    
+                const data = await response.json();
+    
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to cancel booking');
+                }
+    
+                alert('Booking cancelled successfully');
+                loadActiveBookings(); // Refresh the list
+            } catch (error) {
+                console.error('Error cancelling booking:', error);
+                alert(error.message || 'Error cancelling booking');
+            }
+        }
+    
+        function showErrorState(message) {
             elements.bookingList.innerHTML = `
                 <div class="empty-state">
                     <i class="fas fa-exclamation-triangle"></i>
                     <h3>Error Loading Bookings</h3>
                     <p>${message}</p>
-                    <button onclick="loadBookingHistory()" style="margin-top: 15px; padding: 8px 16px; background: #094e5b; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    <button onclick="loadActiveBookings()" style="margin-top: 15px; padding: 8px 16px; background: #094e5b; color: white; border: none; border-radius: 4px; cursor: pointer;">
                         Try Again
                     </button>
                 </div>
             `;
         }
-
+    
         // Logout function
         function logout() {
             localStorage.removeItem('userID');
             localStorage.removeItem('user_Name');
             window.location.href = 'userloginpage.html';
         }
-
+    
         // Initialize page
         document.addEventListener('DOMContentLoaded', () => {
             if (checkLogin()) {
-                loadBookingHistory();
+                loadActiveBookings();
             }
             
             elements.logoutBtn.addEventListener('click', logout);

@@ -934,7 +934,164 @@ app.get("/owner-late-returns", async (req, res) => {
 });
 // User Bookings Endpoint
 // GET User Bookings with Trip Details
-app.get('/user-bookings-v2', async (req, res) => {
+app.get('/active-user-bookings', async (req, res) => {
+  const userId = req.query.user_id;
+  
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID is required'
+    });
+  }
+
+  try {
+    const [bookings] = await pool.execute(`
+      SELECT 
+        t.trip_id,
+        t.car_id,
+        c.car_name,
+        c.model,
+        c.price_per_day,
+        c.city,
+        t.start_date,
+        t.end_date,
+        tr.actual_return_date,
+        CASE
+          WHEN tr.actual_return_date IS NULL AND t.start_date > CURDATE() THEN 'Upcoming'
+          WHEN tr.actual_return_date IS NULL AND t.start_date <= CURDATE() THEN 'Active'
+          ELSE 'Completed'
+        END AS booking_status
+      FROM trips t
+      JOIN cars c ON t.car_id = c.cars_id
+      LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+      WHERE t.userID = ?
+      AND tr.actual_return_date IS NULL
+      ORDER BY t.start_date ASC
+    `, [userId]);
+
+    res.json({
+      success: true,
+      bookings: bookings.map(booking => ({
+        ...booking,
+        can_cancel: new Date(booking.start_date) > new Date() && booking.booking_status === 'Upcoming'
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error fetching active bookings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch bookings',
+      error: error.message
+    });
+  }
+});
+
+app.delete('/cancel-booking', async (req, res) => {
+  const { trip_id, user_id } = req.body;
+  
+  if (!trip_id || !user_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Trip ID and User ID are required'
+    });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1. Verify booking exists and belongs to user
+    const [booking] = await connection.execute(
+      `SELECT t.start_date, tc.userID as confirmation_user_id
+       FROM trips t
+       LEFT JOIN trip_confirmations tc 
+         ON t.userID = tc.userID 
+         AND t.car_id = tc.car_id 
+         AND t.start_date = tc.start_date
+       WHERE t.trip_id = ?`,
+      [trip_id]
+    );
+
+    if (booking.length === 0 || (booking[0].confirmation_user_id && booking[0].confirmation_user_id != user_id)) {
+      await connection.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Booking not found or not authorized'
+      });
+    }
+
+    // 2. Check if booking can be cancelled (future booking)
+    const startDate = new Date(booking[0].start_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (startDate <= today) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot cancel a trip that has already started'
+      });
+    }
+
+    // 3. Mark as cancelled in trip_confirmations if exists
+    await connection.execute(
+      `UPDATE trip_confirmations 
+       SET status = 'Cancelled'
+       WHERE userID = ? 
+       AND car_id = (
+         SELECT car_id FROM trips WHERE trip_id = ?
+       )
+       AND start_date = ?`,
+      [user_id, trip_id, booking[0].start_date]
+    );
+
+    // 4. Delete dependent records
+    await connection.execute(
+      'DELETE FROM late_fees WHERE trip_id = ?',
+      [trip_id]
+    );
+
+    await connection.execute(
+      'DELETE FROM trip_returns WHERE trip_id = ?',
+      [trip_id]
+    );
+
+    // 5. Delete the trip
+    const [result] = await connection.execute(
+      'DELETE FROM trips WHERE trip_id = ?',
+      [trip_id]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'No booking found to cancel'
+      });
+    }
+
+    await connection.commit();
+    
+    return res.json({
+      success: true,
+      message: 'Booking cancelled successfully'
+    });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Error cancelling booking:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to cancel booking',
+      error: error.message
+    });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+app.get('/user-booking-history', async (req, res) => {
   const userId = req.query.user_id;
   if (!userId) {
       return res.status(400).json({
@@ -944,7 +1101,8 @@ app.get('/user-bookings-v2', async (req, res) => {
   }
 
   try {
-      const [bookings] = await pool.execute(`
+      // Get completed trips (actual_return_date not null)
+      const [completedTrips] = await pool.execute(`
           SELECT 
               t.trip_id,
               t.userID,
@@ -956,29 +1114,49 @@ app.get('/user-bookings-v2', async (req, res) => {
               c.model,
               c.price_per_day,
               COALESCE(lf.penalty, 0.00) AS penalty,
-              CASE 
-                  WHEN tr.actual_return_date IS NULL THEN 'Confirmed'
-                  WHEN tr.actual_return_date > t.end_date THEN 'Late Return'
-                  ELSE 'Completed'
-              END AS status
+              'Completed' AS status
           FROM trips t
           JOIN cars c ON t.car_id = c.cars_id
-          LEFT JOIN trip_returns tr ON t.trip_id = tr.trip_id
+          JOIN trip_returns tr ON t.trip_id = tr.trip_id
           LEFT JOIN late_fees lf ON t.trip_id = lf.trip_id
           WHERE t.userID = ?
-          ORDER BY t.trip_id DESC
+          AND tr.actual_return_date IS NOT NULL
       `, [userId]);
+
+      // Get cancelled/rejected bookings from trip_confirmations
+      const [cancelledBookings] = await pool.execute(`
+          SELECT 
+              NULL AS trip_id,
+              tc.userID,
+              tc.car_id,
+              DATE_FORMAT(tc.start_date, '%Y-%m-%d') AS start_date,
+              DATE_FORMAT(tc.end_date, '%Y-%m-%d') AS end_date,
+              NULL AS actual_return_date,
+              c.car_name,
+              c.model,
+              c.price_per_day,
+              0.00 AS penalty,
+              tc.status
+          FROM trip_confirmations tc
+          JOIN cars c ON tc.car_id = c.cars_id
+          WHERE tc.userID = ?
+          AND tc.status IN ('Cancelled', 'Rejected')
+      `, [userId]);
+
+      // Combine both results
+      const allBookings = [...completedTrips, ...cancelledBookings]
+          .sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
 
       res.json({
           success: true,
-          bookings: bookings.map(booking => ({
+          bookings: allBookings.map(booking => ({
               ...booking,
-              // Convert string dates to Date objects for frontend
               start_date: new Date(booking.start_date),
               end_date: new Date(booking.end_date),
               actual_return_date: booking.actual_return_date 
                   ? new Date(booking.actual_return_date) 
-                  : null
+                  : null,
+              penalty: Number(booking.penalty)
           }))
       });
 
@@ -986,12 +1164,11 @@ app.get('/user-bookings-v2', async (req, res) => {
       console.error('Database error:', error);
       res.status(500).json({
           success: false,
-          message: 'Failed to fetch bookings',
+          message: 'Failed to fetch booking history',
           error: error.message
       });
   }
 });
-
 // GET /owner-current-bookings
 app.post('/owner-current-bookings', async (req, res) => {
   const { ownerId } = req.body;
@@ -1034,6 +1211,97 @@ app.post('/owner-current-bookings', async (req, res) => {
       message: "Failed to fetch current bookings",
       error: error.message
     });
+  }
+});
+
+// GET single car (for editing)
+app.get('/cars/:id', async (req, res) => {
+  try {
+      const carId = req.params.id;
+      const ownerId = req.query.ownerID;
+
+      if (!ownerId) {
+          return res.status(400).json({ 
+              success: false,
+              message: "Owner ID is required" 
+          });
+      }
+
+      const [car] = await pool.query(`
+          SELECT * FROM cars 
+          WHERE cars_id = ? AND ownerID = ?
+      `, [carId, ownerId]);
+
+      if (car.length === 0) {
+          return res.status(404).json({ 
+              success: false,
+              message: "Car not found or you don't have permission" 
+          });
+      }
+
+      res.status(200).json({
+          success: true,
+          car: car[0]
+      });
+
+  } catch (error) {
+      console.error("Error fetching car:", error);
+      res.status(500).json({
+          success: false,
+          message: "Failed to fetch car",
+          error: error.message
+      });
+  }
+});
+
+// UPDATE car
+app.put('/cars/:id', async (req, res) => {
+  try {
+      const carId = req.params.id;
+      const { car_name, model, price_per_day, city, ownerID } = req.body;
+
+      if (!ownerID) {
+          return res.status(400).json({ 
+              success: false,
+              message: "Owner ID is required" 
+          });
+      }
+
+      // Verify ownership first
+      const [ownership] = await pool.query(
+          `SELECT 1 FROM cars WHERE cars_id = ? AND ownerID = ?`,
+          [carId, ownerID]
+      );
+
+      if (ownership.length === 0) {
+          return res.status(403).json({ 
+              success: false,
+              message: "You don't own this car" 
+          });
+      }
+
+      // Update the car
+      const [result] = await pool.query(`
+          UPDATE cars SET
+              car_name = ?,
+              model = ?,
+              price_per_day = ?,
+              city = ?
+          WHERE cars_id = ?
+      `, [car_name, model, price_per_day, city, carId]);
+
+      res.status(200).json({
+          success: true,
+          message: "Car updated successfully"
+      });
+
+  } catch (error) {
+      console.error("Error updating car:", error);
+      res.status(500).json({
+          success: false,
+          message: "Failed to update car",
+          error: error.message
+      });
   }
 });
 

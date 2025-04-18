@@ -11,7 +11,27 @@
             box-sizing: border-box;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-
+        .car-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .edit-btn {
+            background-color: #ffc107;
+            color: #000;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: opacity 0.3s;
+        }
+        
+        .edit-btn:hover {
+            opacity: 0.9;
+            background-color: #e0a800;
+        }
         body {
             background-color: #f5f7fa;
             color: #333;
@@ -291,43 +311,43 @@
     </div>
 
     <!-- Popup Modal for Adding Cars -->
-    <div id="carFormPopup" class="popup">
-        <div class="popup-content">
-            <span class="close-btn">&times;</span>
-            <h2>Add a New Car</h2>
-            <form id="carForm">
-                <div class="input-group">
-                    <label for="carName">Car Name:</label>
-                    <input type="text" id="carName" required>
-                </div>
-                
-                <div class="input-group">
-                    <label for="carModel">Car Model:</label>
-                    <input type="text" id="carModel" required>
-                </div>
+    <!-- Popup Modal for Adding/Editing Cars -->
+<div id="carFormPopup" class="popup">
+    <div class="popup-content">
+        <span class="close-btn">&times;</span>
+        <h2 id="carFormTitle">Add a New Car</h2>  <!-- Added ID here -->
+        <form id="carForm">
+            <div class="input-group">
+                <label for="carName">Car Name:</label>
+                <input type="text" id="carName" required>
+            </div>
+            
+            <div class="input-group">
+                <label for="carModel">Car Model:</label>
+                <input type="text" id="carModel" required>
+            </div>
 
-                <div class="input-group">
-                    <label for="carPrice">Price per Day (₹):</label>
-                    <input type="number" id="carPrice" min="1" step="1" required>
-                </div>
+            <div class="input-group">
+                <label for="carPrice">Price per Day (₹):</label>
+                <input type="number" id="carPrice" min="1" step="1" required>
+            </div>
 
-                <div class="input-group">
-                    <label for="rentalStation">Select Rental City:</label>
-                    <select id="rentalStation" required>
-                        <option value="">Select a city</option>
-                        <option value="Ahmedabad">Ahmedabad</option>
-                        <option value="Surat">Surat</option>
-                        <option value="Vadodara">Vadodara</option>
-                        <option value="Rajkot">Rajkot</option>
-                        <option value="Gandhinagar">Gandhinagar</option>
-                    </select>
-                </div>
+            <div class="input-group">
+                <label for="rentalStation">Select Rental City:</label>
+                <select id="rentalStation" required>
+                    <option value="">Select a city</option>
+                    <option value="Ahmedabad">Ahmedabad</option>
+                    <option value="Surat">Surat</option>
+                    <option value="Vadodara">Vadodara</option>
+                    <option value="Rajkot">Rajkot</option>
+                    <option value="Gandhinagar">Gandhinagar</option>
+                </select>
+            </div>
 
-                <button type="submit" class="submit-btn">Add Car</button>
-            </form>
-        </div>
+            <button type="submit" class="submit-btn">Save Car</button>
+        </form>
     </div>
-
+</div>
     <script>
         document.getElementById("addCarBtn").addEventListener("click", function () {
             document.getElementById("carFormPopup").style.display = "block";
@@ -387,22 +407,9 @@
             if (!ownerID) return;
         
             try {
-                console.log("Fetching cars for ownerID:", ownerID);
                 const response = await fetch(`http://localhost:3000/cars?ownerID=${ownerID}`);
-        
-                console.log("Response status:", response.status);
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-                }
-        
                 const data = await response.json();
-                console.log("Response data:", data);
                 
-                if (!data.success) {
-                    throw new Error(data.message || "Failed to fetch cars");
-                }
-        
                 const carList = document.getElementById("carList");
                 carList.innerHTML = "";
         
@@ -418,76 +425,31 @@
                         <h3>${car.car_name} (${car.model})</h3>
                         <p>Price per day: ₹${car.price_per_day}</p>
                         <p>City: ${car.city}</p>
-                        <button class="delete-btn" data-id="${car.cars_id}">Delete</button>
+                        <div class="car-buttons">
+                            <button class="edit-btn" data-id="${car.cars_id}">Edit</button>
+                            <button class="delete-btn" data-id="${car.cars_id}">Delete</button>
+                        </div>
                     `;
                     carList.appendChild(carItem);
                 });
         
-                // Only keep delete button event listeners
+                // Add event listeners
                 document.querySelectorAll(".delete-btn").forEach(button => {
                     button.addEventListener("click", deleteCar);
+                });
+                
+                document.querySelectorAll(".edit-btn").forEach(button => {
+                    button.addEventListener("click", editCar);
                 });
         
             } catch (error) {
                 console.error("Error loading cars:", error);
                 alert(`Error loading cars: ${error.message}`);
             }
-        }
-        
+        }   
         
         // Handle car form submission
-        document.getElementById("carForm").addEventListener("submit", async function (event) {
-            event.preventDefault();
-        
-            // Get and validate inputs
-            const carName = document.getElementById("carName").value.trim();
-            const carModel = document.getElementById("carModel").value.trim();
-            const carPrice = document.getElementById("carPrice").value;
-            const rentalCity = document.getElementById("rentalStation").value;
-            const ownerID = localStorage.getItem("ownerID");
-        
-            // Validate inputs
-            if (!carName || !carModel || !carPrice || !rentalCity) {
-                alert("Please fill all fields");
-                return;
-            }
-        
-            // Convert price to number
-            const price = parseFloat(carPrice);
-            if (isNaN(price) || price <= 0) {
-                alert("Please enter a valid price");
-                return;
-            }
-        
-            try {
-                const response = await fetch("http://localhost:3000/cars", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        car_name: carName,
-                        model: carModel,
-                        price_per_day: price,
-                        city: rentalCity,
-                        ownerID: ownerID
-                    })
-                });
-        
-                const data = await response.json();
-        
-                if (!response.ok) {
-                    throw new Error(data.message || "Failed to add car");
-                }
-        
-                alert("Car added successfully!");
-                document.getElementById("carForm").reset();
-                document.getElementById("carFormPopup").style.display = "none";
-                loadCars(); // Refresh the list
-            } catch (error) {
-                console.error("Error:", error);
-                alert(error.message || "Error adding car");
-            }
-        });
-        async function handleRequestAction(userId, carId, startDate, action) {
+                async function handleRequestAction(userId, carId, startDate, action) {
             const ownerID = localStorage.getItem('ownerID');
             if (!ownerID) return;
     
@@ -523,7 +485,7 @@
                 alert(error.message);
             }
         }
-        // Delete car function
+              // Delete car function
         async function deleteCar(event) {
             const carID = event.target.getAttribute("data-id");
             const ownerID = checkLogin();
@@ -549,6 +511,122 @@
                 alert(error.message || "Error deleting car. Please try again.");
             }
         }
+        // Edit car function
+async function editCar(event) {
+    const carID = event.target.getAttribute("data-id");
+    const ownerID = checkLogin();
+    if (!ownerID) return;
+
+    try {
+        // Fetch current car details
+        const response = await fetch(`http://localhost:3000/cars/${carID}?ownerID=${ownerID}`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || "Failed to fetch car details");
+        }
+
+        // Get the popup elements
+        const popup = document.getElementById("carFormPopup");
+        const formTitle = document.getElementById("carFormTitle");
+        const form = document.getElementById("carForm");
+
+        // Populate the form
+        document.getElementById("carName").value = data.car.car_name;
+        document.getElementById("carModel").value = data.car.model;
+        document.getElementById("carPrice").value = data.car.price_per_day;
+        document.getElementById("rentalStation").value = data.car.city;
+        
+        // Change to edit mode
+        formTitle.textContent = "Edit Car Details";
+        form.dataset.editMode = "true";
+        form.dataset.carId = carID;
+        
+        // Show the popup
+        popup.style.display = "block";
+
+    } catch (error) {
+        console.error("Error preparing edit:", error);
+        alert(error.message || "Error preparing car for edit");
+    }
+}
+
+// Update form submission handler
+document.getElementById("carForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const form = this;
+    const isEditMode = form.dataset.editMode === "true";
+    const ownerID = localStorage.getItem("ownerID");
+
+    // Get form values
+    const carData = {
+        car_name: document.getElementById("carName").value.trim(),
+        model: document.getElementById("carModel").value.trim(),
+        price_per_day: parseFloat(document.getElementById("carPrice").value),
+        city: document.getElementById("rentalStation").value,
+        ownerID: ownerID
+    };
+
+    try {
+        let response, endpoint, method;
+        
+        if (isEditMode) {
+            endpoint = `http://localhost:3000/cars/${form.dataset.carId}`;
+            method = "PUT";
+        } else {
+            endpoint = "http://localhost:3000/cars";
+            method = "POST";
+        }
+
+        response = await fetch(endpoint, {
+            method: method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(carData)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.message || `Failed to ${isEditMode ? 'update' : 'add'} car`);
+        }
+
+        alert(`Car ${isEditMode ? 'updated' : 'added'} successfully!`);
+        form.reset();
+        document.getElementById("carFormPopup").style.display = "none";
+        delete form.dataset.editMode;
+        delete form.dataset.carId;
+        document.getElementById("carFormTitle").textContent = "Add a New Car";
+        loadCars(); // Refresh the list
+
+    } catch (error) {
+        console.error("Error:", error);
+        alert(error.message || `Error ${isEditMode ? 'updating' : 'adding'} car`);
+    }
+});
+
+// Close popup when clicking X or outside
+document.querySelector(".close-btn").addEventListener("click", function() {
+    const form = document.getElementById("carForm");
+    document.getElementById("carFormPopup").style.display = "none";
+    document.getElementById("carFormTitle").textContent = "Add a New Car";
+    form.reset();
+    delete form.dataset.editMode;
+    delete form.dataset.carId;
+});
+
+// Close popup when clicking outside
+window.addEventListener("click", function(event) {
+    const popup = document.getElementById("carFormPopup");
+    if (event.target === popup) {
+        const form = document.getElementById("carForm");
+        popup.style.display = "none";
+        document.getElementById("carFormTitle").textContent = "Add a New Car";
+        form.reset();
+        delete form.dataset.editMode;
+        delete form.dataset.carId;
+    }
+});
         
         // Load cars on page load and check login
         document.addEventListener("DOMContentLoaded", function() {

@@ -12,6 +12,7 @@
             margin: 0;
             padding: 0;
         }
+        
     </style>
 </head>
 <body>
@@ -19,7 +20,7 @@
     <nav class="navbar">
         <h1>QuickRide</h1>
         <div class="nav-links">
-            <a href="/Users/manavkumar/Desktop/project/user-carbooking.html">Bookings</a>
+            <a href="user-carbooking.html">Bookings</a>
         </div>
         <i class="fas fa-user-circle user-icon"></i>
     </nav>
@@ -165,7 +166,11 @@
                 selectElement.appendChild(option);
             });
         }
-        
+        function logout() {
+            localStorage.removeItem('userID');
+            localStorage.removeItem('user_Name');
+            window.location.href = 'userloginpage.html';
+        }
         window.populateCityDropdown = populateCityDropdown;
     </script>
 </body>

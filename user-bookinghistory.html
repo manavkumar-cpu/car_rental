@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickRide - Booking History</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+
+        h1 {
+            color: #094e5b;
+            font-size: 28px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .nav-links a {
+            color: #094e5b;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+        
+        .nav-links a:hover {
+            background-color: #e1e5eb;
+        }
+        
+        .nav-links a.active {
+            background-color: #094e5b;
+            color: white;
+        }
+
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background-color: #bb2d3b;
+        }
+
+        .booking-list {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .booking-item {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #ddd;
+        }
+
+        .booking-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+
+        .booking-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .status-completed {
+            background-color: #28a745;
+        }
+
+        .status-cancelled {
+            background-color: #6c757d;
+        }
+
+        .status-rejected {
+            background-color: #dc3545;
+        }
+
+        .booking-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .detail-group p:first-child {
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .total-amount {
+            font-weight: 600;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e1e5eb;
+        }
+
+        .penalty-amount {
+            color: #dc3545;
+        }
+
+        .rejected-text {
+            color: #6c757d;
+            font-style: italic;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .booking-details {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>QuickRide - Booking History</h1>
+                <p id="userNameDisplay"></p>
+            </div>
+            <div class="nav-links">
+                <a href="usermainpage.html">Home</a>
+                <a href="user-carbooking.html">My Bookings</a>
+                <a href="user-bookinghistory.html" class="active">Booking History</a>
+            </div>
+            <button id="logoutBtn" class="logout-btn">Logout</button>
+        </header>
+
+        <div id="bookingList" class="booking-list">
+            <!-- Bookings will be loaded here dynamically -->
+        </div>
+    </div>
+
+    <script>
+        // Global constants
+        const API_BASE_URL = 'http://localhost:3000';
+        
+        // DOM Elements
+        const elements = {
+            bookingList: document.getElementById('bookingList'),
+            userNameDisplay: document.getElementById('userNameDisplay'),
+            logoutBtn: document.getElementById('logoutBtn')
+        };
+
+        // Function to check if user is logged in
+        function checkLogin() {
+            const userID = localStorage.getItem('userID');
+            const userName = localStorage.getItem('user_Name');
+        
+            if (!userID) {
+                alert('Please login first');
+                window.location.href = 'userloginpage.html';
+                return null;
+            }
+            
+            if (userName) {
+                elements.userNameDisplay.textContent = `Welcome, ${userName}`;
+            }
+            
+            return userID;
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+            return new Date(dateString).toLocaleDateString('en-US', options);
+        }
+
+        // Load user's booking history
+        async function loadBookingHistory() {
+            const userID = checkLogin();
+            if (!userID) return;
+        
+            try {
+                elements.bookingList.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+                
+                const response = await fetch(`${API_BASE_URL}/user-booking-history?user_id=${userID}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.message || 'Failed to fetch booking history');
+                }
+                
+                renderBookingList(data.bookings);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showErrorState(error.message);
+            }
+        }
+
+        // Render booking list
+        function renderBookingList(bookings) {
+            if (!bookings || bookings.length === 0) {
+                elements.bookingList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-calendar-times"></i>
+                        <h3>No Booking History</h3>
+                        <p>You don't have any past bookings yet.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            elements.bookingList.innerHTML = bookings.map(booking => {
+                const penaltyValue = booking.penalty || 0;
+                const isLate = booking.actual_return_date && 
+                              new Date(booking.actual_return_date) > new Date(booking.end_date);
+                
+                const { days, rentalAmount, totalAmount } = calculateTotalAmount(
+                    booking.start_date,
+                    booking.actual_return_date || booking.end_date,
+                    booking.price_per_day,
+                    penaltyValue
+                );
+                
+                let statusText = 'Completed';
+                let statusClass = 'status-completed';
+                
+                if (booking.status === 'Cancelled') {
+                    statusText = 'Cancelled';
+                    statusClass = 'status-cancelled';
+                } else if (booking.status === 'Rejected') {
+                    statusText = 'Rejected';
+                    statusClass = 'status-rejected';
+                } else if (isLate) {
+                    statusText = 'Late Return';
+                }
+                
+                return `
+                    <div class="booking-item">
+                        <div class="booking-header">
+                            <span class="trip-id">${booking.trip_id ? `Booking #${booking.trip_id}` : 'Booking Request'}</span>
+                            <span class="booking-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <h3>${booking.car_name} ${booking.model}</h3>
+                        
+                        <div class="booking-details">
+                            <div class="detail-group">
+                                <p>Pickup Date</p>
+                                <p>${formatDate(booking.start_date)}</p>
+                            </div>
+                            <div class="detail-group">
+                                <p>Return Date</p>
+                                <p>${formatDate(booking.end_date)}</p>
+                            </div>
+                            ${booking.actual_return_date ? `
+                            <div class="detail-group">
+                                <p>Actual Return</p>
+                                <p>${formatDate(booking.actual_return_date)}</p>
+                            </div>
+                            ` : ''}
+                            <div class="detail-group">
+                                <p>Daily Rate</p>
+                                <p>₹${Number(booking.price_per_day).toFixed(2)}</p>
+                            </div>
+                            ${penaltyValue > 0 ? `
+                            <div class="detail-group">
+                                <p>Late Penalty</p>
+                                <p class="penalty-amount">₹${Number(penaltyValue).toFixed(2)}</p>
+                            </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="total-amount">
+                            ${statusText !== 'Rejected' && statusText !== 'Cancelled' ? `
+                            Total Amount: ₹${totalAmount.toFixed(2)}
+                            ${days > 0 ? `(${days} days × ₹${Number(booking.price_per_day).toFixed(2)}${penaltyValue > 0 ? ` + ₹${penaltyValue.toFixed(2)} penalty` : ''})` : ''}
+                            ` : `<p class="rejected-text">Booking was ${statusText.toLowerCase()}</p>`}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Calculate total amount including penalty
+        function calculateTotalAmount(startDate, endDate, pricePerDay, penalty = 0) {
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const diffDays = Math.max(1, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+            const rentalAmount = diffDays * Number(pricePerDay);
+            const total = rentalAmount + Number(penalty);
+            
+            return {
+                days: diffDays,
+                rentalAmount: rentalAmount,
+                totalAmount: total
+            };
+        }
+
+        function showErrorState(message) {
+            elements.bookingList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Error Loading History</h3>
+                    <p>${message}</p>
+                    <button onclick="loadBookingHistory()" style="margin-top: 15px; padding: 8px 16px; background: #094e5b; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }
+
+        // Logout function
+        function logout() {
+            localStorage.removeItem('userID');
+            localStorage.removeItem('user_Name');
+            window.location.href = 'userloginpage.html';
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            if (checkLogin()) {
+                loadBookingHistory();
+            }
+            
+            elements.logoutBtn.addEventListener('click', logout);
+        });
+    </script>
+</body>
+</html>
