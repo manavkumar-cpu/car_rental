@@ -388,11 +388,13 @@
             return 'status-pending';
         }
     
-        // Check if booking can be cancelled
+        // Check if booking can be cancelled (date-only comparison)
         function canCancelBooking(startDate) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            return new Date(startDate) > today;
+            const bookingStart = new Date(startDate);
+            bookingStart.setHours(0, 0, 0, 0);
+            return bookingStart >= today;
         }
     
         // Load user's active bookings
@@ -446,8 +448,9 @@
                 const statusClass = getStatusClass(booking.booking_status, isLate);
                 let statusText = booking.booking_status;
                 
-                // Add cancel button only for upcoming bookings
-                const showCancelButton = booking.can_cancel;
+                // Check if booking can be cancelled (using the date-only comparison)
+                const showCancelButton = canCancelBooking(booking.start_date) && 
+                                      ['Upcoming', 'Confirmed'].includes(booking.booking_status);
     
                 return `
                     <div class="booking-item ${statusClass}">

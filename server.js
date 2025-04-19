@@ -363,55 +363,263 @@ app.get("/cars", async (req, res) => {
 });
 
 // Delete car (for owners)
-app.delete("/cars/:cars_id", async (req, res) => {
-  const { cars_id } = req.params;
-  const { ownerID } = req.body;
+// app.delete("/cars/:cars_id", async (req, res) => {
+//   const { cars_id } = req.params;
+//   const { ownerID } = req.body;
 
-  if (!ownerID || isNaN(cars_id)) {
+//   if (!ownerID || isNaN(cars_id)) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Valid owner ID and car ID are required"
+//     });
+//   }
+
+//   try {
+//     // Verify ownership
+//     const [car] = await pool.query(
+//       "SELECT ownerID FROM cars WHERE cars_id = ?",
+//       [cars_id]
+//     );
+
+//     if (!car.length) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Car not found"
+//       });
+//     }
+
+//     if (car[0].ownerID != ownerID) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "Unauthorized to delete this car"
+//       });
+//     }
+
+//     // Delete the car
+//     await pool.query(
+//       "DELETE FROM cars WHERE cars_id = ?",
+//       [cars_id]
+//     );
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Car deleted successfully"
+//     });
+//   } catch (error) {
+//     console.error("Database Error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to delete car",
+//       error: error.message
+//     });
+//   }
+// });
+app.delete("/cars/:cars_id", async (req, res) => {
+  // Validate request structure
+  if (!req.params || !req.body || typeof req.body !== 'object') {
     return res.status(400).json({
       success: false,
-      message: "Valid owner ID and car ID are required"
+      message: "Invalid request format"
     });
   }
 
+  const { cars_id } = req.params;
+  const { ownerID } = req.body;
+
+  // Enhanced input validation
+  if (!ownerID || isNaN(Number(ownerID))) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid owner ID is required",
+      field: "ownerID",
+      received: ownerID
+    });
+  }
+
+  if (isNaN(Number(cars_id))) {
+    return res.status(400).json({
+      success: false,
+      message: "Valid car ID is required",
+      field: "cars_id",
+      received: cars_id
+    });
+  }
+
+  let connection;
   try {
-    // Verify ownership
-    const [car] = await pool.query(
-      "SELECT ownerID FROM cars WHERE cars_id = ?",
-      [cars_id]
-    );
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1. Verify ownership and car existence
+    let car;
+    try {
+      [car] = await connection.query(
+        `SELECT ownerID, car_name FROM cars 
+         WHERE cars_id = ? FOR UPDATE`,
+        [cars_id]
+      );
+    } catch (queryError) {
+      console.error("Ownership verification failed:", queryError);
+      throw new Error("Database error during ownership verification");
+    }
 
     if (!car.length) {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
-        message: "Car not found"
+        message: "Car not found",
+        carId: cars_id
       });
     }
 
     if (car[0].ownerID != ownerID) {
+      await connection.rollback();
       return res.status(403).json({
         success: false,
-        message: "Unauthorized to delete this car"
+        message: "Unauthorized to delete this car",
+        providedOwner: ownerID,
+        actualOwner: car[0].ownerID,
+        carName: car[0].car_name
       });
     }
 
-    // Delete the car
-    await pool.query(
-      "DELETE FROM cars WHERE cars_id = ?",
-      [cars_id]
-    );
+    // 2. Check for active bookings (confirmed and future trips)
+    try {
+      const [activeBookings] = await connection.query(
+        `SELECT COUNT(*) as active_count 
+         FROM trip_confirmations 
+         WHERE car_id = ? 
+         AND status = 'Confirmed' 
+         AND end_date >= NOW()`,
+        [cars_id]
+      );
 
-    res.status(200).json({
+      if (activeBookings[0].active_count > 0) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: "Cannot delete car with active bookings",
+          activeBookings: activeBookings[0].active_count,
+          carId: cars_id
+        });
+      }
+    } catch (bookingError) {
+      console.error("Active bookings check failed:", bookingError);
+      throw new Error("Failed to verify active bookings");
+    }
+
+    // 3. Check for pending trips
+    try {
+      const [pendingTrips] = await connection.query(
+        `SELECT COUNT(*) as pending_count 
+         FROM trips t
+         JOIN trip_confirmations tc ON 
+           t.userID = tc.userID AND 
+           t.car_id = tc.car_id AND 
+           t.start_date = tc.start_date
+         WHERE t.car_id = ? 
+         AND tc.status = 'Pending'`,
+        [cars_id]
+      );
+
+      if (pendingTrips[0].pending_count > 0) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: "Cannot delete car with pending trip requests",
+          pendingTrips: pendingTrips[0].pending_count
+        });
+      }
+    } catch (tripError) {
+      console.error("Pending trips check failed:", tripError);
+      throw new Error("Failed to verify pending trips");
+    }
+
+    // 4. Delete related trip data (cascade will handle most, but we clean up explicitly)
+    try {
+      // Get all related trip_ids first
+      const [relatedTrips] = await connection.query(
+        `SELECT trip_id FROM trips WHERE car_id = ?`,
+        [cars_id]
+      );
+
+      if (relatedTrips.length > 0) {
+        const tripIds = relatedTrips.map(trip => trip.trip_id);
+        
+        // Delete from late_fees
+        await connection.query(
+          `DELETE FROM late_fees WHERE trip_id IN (?)`,
+          [tripIds]
+        );
+        
+        // Delete from trip_returns
+        await connection.query(
+          `DELETE FROM trip_returns WHERE trip_id IN (?)`,
+          [tripIds]
+        );
+        
+        // Delete from trips
+        await connection.query(
+          `DELETE FROM trips WHERE car_id = ?`,
+          [cars_id]
+        );
+      }
+    } catch (cleanupError) {
+      console.error("Trip data cleanup failed:", cleanupError);
+      throw new Error("Failed to clean up related trip data");
+    }
+
+    // 5. Finally delete the car (cascade will handle trip_confirmations)
+    let deleteResult;
+    try {
+      [deleteResult] = await connection.query(
+        `DELETE FROM cars WHERE cars_id = ?`,
+        [cars_id]
+      );
+    } catch (deleteError) {
+      console.error("Car deletion failed:", deleteError);
+      throw new Error("Failed to delete car record");
+    }
+
+    if (deleteResult.affectedRows === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "No car found to delete (possible race condition)",
+        carId: cars_id
+      });
+    }
+
+    await connection.commit();
+
+    return res.status(200).json({
       success: true,
-      message: "Car deleted successfully"
+      message: "Car and all related data deleted successfully",
+      details: {
+        carId: cars_id,
+        carName: car[0].car_name,
+        deletedAt: new Date().toISOString()
+      }
     });
+
   } catch (error) {
-    console.error("Database Error:", error);
-    res.status(500).json({
+    if (connection) await connection.rollback();
+    console.error("Car deletion process failed:", error);
+    return res.status(500).json({
       success: false,
-      message: "Failed to delete car",
-      error: error.message
+      message: error.message || "Failed to delete car",
+      errorCode: "CAR_DELETION_FAILED",
+      carId: cars_id,
+      systemError: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
+  } finally {
+    if (connection) {
+      try {
+        await connection.release();
+      } catch (releaseError) {
+        console.error("Failed to release database connection:", releaseError);
+      }
+    }
   }
 });
 
@@ -419,22 +627,67 @@ app.delete("/cars/:cars_id", async (req, res) => {
 
 // Create trip confirmation request
 app.post('/trip-confirmations', async (req, res) => {
-  const { userId, carId, startDate, endDate } = req.body;
-
-  // Validate input
-  if (!userId || !carId || !startDate || !endDate) {
+  // Validate request body structure first
+  if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({
       success: false,
-      message: "All booking details are required"
+      message: "Invalid request body format"
     });
   }
 
+  const { userId, carId, startDate, endDate } = req.body;
+
+  // Enhanced input validation
+  if (!userId || !carId || !startDate || !endDate) {
+    return res.status(400).json({
+      success: false,
+      message: "All booking details are required",
+      requiredFields: ["userId", "carId", "startDate", "endDate"]
+    });
+  }
+
+  // Validate field types
+  if (typeof userId !== 'number' || typeof carId !== 'number') {
+    return res.status(400).json({
+      success: false,
+      message: "userId and carId must be numbers"
+    });
+  }
+
+  // Date validation
   try {
-    // Check if car exists
-    const [car] = await pool.query(
-      "SELECT * FROM cars WHERE cars_id = ?",
-      [carId]
-    );
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime())) throw new Error("Invalid startDate");
+    if (isNaN(end.getTime())) throw new Error("Invalid endDate");
+    if (start >= end) throw new Error("endDate must be after startDate");
+    if (start < new Date()) throw new Error("startDate cannot be in the past");
+    
+  } catch (dateError) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid date parameters",
+      error: dateError.message
+    });
+  }
+
+  let connection;
+  try {
+    // Get database connection from pool
+    connection = await pool.getConnection();
+    
+    // Check if car exists - with transaction isolation
+    let car;
+    try {
+      [car] = await connection.query(
+        "SELECT * FROM cars WHERE cars_id = ? FOR UPDATE",
+        [carId]
+      );
+    } catch (carQueryError) {
+      console.error("Car query failed:", carQueryError);
+      throw new Error("Failed to verify car availability");
+    }
 
     if (car.length === 0) {
       return res.status(404).json({
@@ -444,10 +697,16 @@ app.post('/trip-confirmations', async (req, res) => {
     }
 
     // Check if user exists
-    const [user] = await pool.query(
-      "SELECT userID FROM users WHERE userID = ?",
-      [userId]
-    );
+    let user;
+    try {
+      [user] = await connection.query(
+        "SELECT userID FROM users WHERE userID = ?",
+        [userId]
+      );
+    } catch (userQueryError) {
+      console.error("User query failed:", userQueryError);
+      throw new Error("Failed to verify user existence");
+    }
 
     if (user.length === 0) {
       return res.status(404).json({
@@ -456,42 +715,75 @@ app.post('/trip-confirmations', async (req, res) => {
       });
     }
 
-    // Check for date conflicts
-    const [conflicts] = await pool.query(
-      `SELECT * FROM trip_confirmations 
-       WHERE car_id = ? AND status = 'Confirmed'
-       AND ((start_date <= ? AND end_date >= ?) 
-       OR (start_date <= ? AND end_date >= ?))`,
-      [carId, endDate, startDate, startDate, endDate]
-    );
+    // Check for date conflicts with transaction
+    let conflicts;
+    try {
+      [conflicts] = await connection.query(
+        `SELECT * FROM trip_confirmations 
+         WHERE car_id = ? AND status = 'Confirmed'
+         AND ((start_date <= ? AND end_date >= ?) 
+         OR (start_date <= ? AND end_date >= ?))`,
+        [carId, endDate, startDate, startDate, endDate]
+      );
+    } catch (conflictQueryError) {
+      console.error("Conflict check failed:", conflictQueryError);
+      throw new Error("Failed to check booking conflicts");
+    }
 
     if (conflicts.length > 0) {
       return res.status(409).json({
         success: false,
-        message: "Car is already booked for selected dates"
+        message: "Car is already booked for selected dates",
+        conflictingBookings: conflicts
       });
     }
 
-    // Create trip confirmation request
-    const [result] = await pool.query(
-      `INSERT INTO trip_confirmations 
-       (userID, car_id, start_date, end_date, status) 
-       VALUES (?, ?, ?, ?, 'Pending')`,
-      [userId, carId, startDate, endDate]
-    );
+    // Begin transaction
+    await connection.beginTransaction();
 
-    res.status(201).json({
-      success: true,
-      message: "Booking request sent to owner",
-      confirmationId: result.insertId
-    });
+    try {
+      // Create trip confirmation request
+      const [result] = await connection.query(
+        `INSERT INTO trip_confirmations 
+         (userID, car_id, start_date, end_date, status) 
+         VALUES (?, ?, ?, ?, 'Pending')`,
+        [userId, carId, startDate, endDate]
+      );
+
+      // Commit transaction
+      await connection.commit();
+
+      res.status(201).json({
+        success: true,
+        message: "Booking request sent to owner",
+        confirmationId: result.insertId,
+        carDetails: {
+          id: carId,
+          name: car[0].name // Assuming cars have a name field
+        },
+        bookingDates: {
+          start: startDate,
+          end: endDate
+        }
+      });
+
+    } catch (insertError) {
+      // Rollback transaction if insert fails
+      await connection.rollback();
+      console.error("Booking creation failed:", insertError);
+      throw new Error("Failed to create booking request");
+    }
+
   } catch (error) {
-    console.error("Database Error:", error);
+    console.error("Booking Process Error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to create booking request",
-      error: error.message
+      message: error.message || "Failed to process booking request",
+      errorCode: "BOOKING_PROCESS_FAILURE"
     });
+  } finally {
+    // Release connection back to pool
+    if (connection) connection.release();
   }
 });
 
@@ -516,7 +808,7 @@ app.put('/trip-confirmations/:userId/:carId/:startDate', async (req, res) => {
     const [result] = await pool.query(
       `UPDATE trip_confirmations 
        SET status = ? 
-       WHERE userID = ? AND car_id = ? AND start_date = ?`,
+       WHERE userID = ? AND car_id = ? AND start_date = ? AND status = 'Pending'`,
       [req.body.status, req.params.userId, req.params.carId, dateObj]
     );
     
@@ -988,12 +1280,37 @@ app.get('/active-user-bookings', async (req, res) => {
 });
 
 app.delete('/cancel-booking', async (req, res) => {
+  // Initial request validation
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid request body format'
+    });
+  }
+
   const { trip_id, user_id } = req.body;
   
+  // Input validation
   if (!trip_id || !user_id) {
     return res.status(400).json({
       success: false,
-      message: 'Trip ID and User ID are required'
+      message: 'Trip ID and User ID are required',
+      requiredFields: ['trip_id', 'user_id']
+    });
+  }
+
+  // Validate ID types
+  if (isNaN(Number(trip_id))) {
+    return res.status(400).json({
+      success: false,
+      message: 'Trip ID must be a number'
+    });
+  }
+
+  if (isNaN(Number(user_id))) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID must be a number'
     });
   }
 
@@ -1003,27 +1320,56 @@ app.delete('/cancel-booking', async (req, res) => {
     await connection.beginTransaction();
 
     // 1. Verify booking exists and belongs to user
-    const [booking] = await connection.execute(
-      `SELECT t.start_date, tc.userID as confirmation_user_id
-       FROM trips t
-       LEFT JOIN trip_confirmations tc 
-         ON t.userID = tc.userID 
-         AND t.car_id = tc.car_id 
-         AND t.start_date = tc.start_date
-       WHERE t.trip_id = ?`,
-      [trip_id]
-    );
+    let booking;
+    try {
+      const [bookingResult] = await connection.execute(
+        `SELECT t.start_date, tc.userID as confirmation_user_id
+         FROM trips t
+         LEFT JOIN trip_confirmations tc 
+           ON t.userID = tc.userID 
+           AND t.car_id = tc.car_id 
+           AND t.start_date = tc.start_date
+         WHERE t.trip_id = ?`,
+        [trip_id]
+      );
+      booking = bookingResult;
+    } catch (queryError) {
+      console.error('Booking verification query failed:', queryError);
+      throw new Error('Failed to verify booking details');
+    }
 
-    if (booking.length === 0 || (booking[0].confirmation_user_id && booking[0].confirmation_user_id != user_id)) {
+    if (booking.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    if (booking[0].confirmation_user_id && booking[0].confirmation_user_id != user_id) {
       await connection.rollback();
       return res.status(403).json({
         success: false,
-        message: 'Booking not found or not authorized'
+        message: 'Not authorized to cancel this booking'
       });
     }
 
     // 2. Check if booking can be cancelled (future booking)
-    const startDate = new Date(booking[0].start_date);
+    let startDate;
+    try {
+      startDate = new Date(booking[0].start_date);
+      if (isNaN(startDate.getTime())) {
+        throw new Error('Invalid start date format in database');
+      }
+    } catch (dateError) {
+      await connection.rollback();
+      return res.status(500).json({
+        success: false,
+        message: 'Invalid booking date format',
+        error: dateError.message
+      });
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
@@ -1031,40 +1377,69 @@ app.delete('/cancel-booking', async (req, res) => {
       await connection.rollback();
       return res.status(400).json({
         success: false,
-        message: 'Cannot cancel a trip that has already started'
+        message: 'Cannot cancel a trip that has already started',
+        startDate: booking[0].start_date,
+        currentDate: today.toISOString()
       });
     }
 
     // 3. Mark as cancelled in trip_confirmations if exists
-    await connection.execute(
-      `UPDATE trip_confirmations 
-       SET status = 'Cancelled'
-       WHERE userID = ? 
-       AND car_id = (
-         SELECT car_id FROM trips WHERE trip_id = ?
-       )
-       AND start_date = ?`,
-      [user_id, trip_id, booking[0].start_date]
-    );
+    try {
+      const [updateResult] = await connection.execute(
+        `UPDATE trip_confirmations 
+         SET status = 'Cancelled'
+         WHERE userID = ? 
+         AND car_id = (
+           SELECT car_id FROM trips WHERE trip_id = ?
+         )
+         AND start_date = ?`,
+        [user_id, trip_id, booking[0].start_date]
+      );
+      if (updateResult.affectedRows > 0) {
+        console.log(`Marked ${updateResult.affectedRows} confirmation(s) as cancelled`);
+      }
+    } catch (updateError) {
+      console.error('Failed to update trip confirmation:', updateError);
+      throw new Error('Failed to update booking status');
+    }
 
-    // 4. Delete dependent records
-    await connection.execute(
-      'DELETE FROM late_fees WHERE trip_id = ?',
-      [trip_id]
-    );
+    // 4. Delete dependent records - late_fees
+    try {
+      const [lateFeeResult] = await connection.execute(
+        'DELETE FROM late_fees WHERE trip_id = ?',
+        [trip_id]
+      );
+      console.log(`Deleted ${lateFeeResult.affectedRows} late fee records`);
+    } catch (lateFeeError) {
+      console.error('Failed to delete late fees:', lateFeeError);
+      throw new Error('Failed to clean up late fees');
+    }
 
-    await connection.execute(
-      'DELETE FROM trip_returns WHERE trip_id = ?',
-      [trip_id]
-    );
+    // 5. Delete dependent records - trip_returns
+    try {
+      const [tripReturnResult] = await connection.execute(
+        'DELETE FROM trip_returns WHERE trip_id = ?',
+        [trip_id]
+      );
+      console.log(`Deleted ${tripReturnResult.affectedRows} trip return records`);
+    } catch (tripReturnError) {
+      console.error('Failed to delete trip returns:', tripReturnError);
+      throw new Error('Failed to clean up trip returns');
+    }
 
-    // 5. Delete the trip
-    const [result] = await connection.execute(
-      'DELETE FROM trips WHERE trip_id = ?',
-      [trip_id]
-    );
+    // 6. Delete the trip
+    let deleteResult;
+    try {
+      [deleteResult] = await connection.execute(
+        'DELETE FROM trips WHERE trip_id = ?',
+        [trip_id]
+      );
+    } catch (deleteError) {
+      console.error('Failed to delete trip:', deleteError);
+      throw new Error('Failed to delete booking record');
+    }
 
-    if (result.affectedRows === 0) {
+    if (deleteResult.affectedRows === 0) {
       await connection.rollback();
       return res.status(404).json({
         success: false,
@@ -1076,19 +1451,30 @@ app.delete('/cancel-booking', async (req, res) => {
     
     return res.json({
       success: true,
-      message: 'Booking cancelled successfully'
+      message: 'Booking cancelled successfully',
+      details: {
+        tripId: trip_id,
+        cancelledAt: new Date().toISOString()
+      }
     });
 
   } catch (error) {
     if (connection) await connection.rollback();
-    console.error('Error cancelling booking:', error);
+    console.error('Booking cancellation process failed:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to cancel booking',
-      error: error.message
+      message: error.message || 'Failed to cancel booking',
+      errorCode: 'BOOKING_CANCELLATION_FAILED',
+      tripId: trip_id
     });
   } finally {
-    if (connection) connection.release();
+    if (connection) {
+      try {
+        await connection.release();
+      } catch (releaseError) {
+        console.error('Failed to release database connection:', releaseError);
+      }
+    }
   }
 });
 app.get('/user-booking-history', async (req, res) => {
