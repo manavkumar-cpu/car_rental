@@ -658,11 +658,14 @@ app.post('/trip-confirmations', async (req, res) => {
   try {
     const start = new Date(startDate);
     const end = new Date(endDate);
-    
+    const today = new Date();
+today.setHours(0, 0, 0, 0); // Reset time to midnight
+
+if (start < today) throw new Error("startDate cannot be in the past");
     if (isNaN(start.getTime())) throw new Error("Invalid startDate");
     if (isNaN(end.getTime())) throw new Error("Invalid endDate");
     if (start > end) throw new Error("endDate must be after startDate");
-    if (start < new Date()) throw new Error("startDate cannot be in the past");
+    if (start < today) throw new Error("startDate cannot be in the past");
     
   } catch (dateError) {
     return res.status(400).json({
