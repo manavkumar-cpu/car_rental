@@ -661,7 +661,7 @@ app.post('/trip-confirmations', async (req, res) => {
     
     if (isNaN(start.getTime())) throw new Error("Invalid startDate");
     if (isNaN(end.getTime())) throw new Error("Invalid endDate");
-    if (start >= end) throw new Error("endDate must be after startDate");
+    if (start > end) throw new Error("endDate must be after startDate");
     if (start < new Date()) throw new Error("startDate cannot be in the past");
     
   } catch (dateError) {
